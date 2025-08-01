@@ -71,7 +71,7 @@ netcdf2region \
 See the command-line help (`--help`) for more options and details.
 
 ## Precomputed weights
-The package provides precomputed weights for standard grids and shapefiles that can be used immediately with the 'netcdf2region' command.
+The package provides precomputed weights for standard grids and shapefiles that can be used immediately with the `netcdf2region` command.
 
 | Grid         | Shapefile         | Weights file                                 |
 |--------------|-------------------|----------------------------------------------|
@@ -83,17 +83,17 @@ To aggregate NetCDF data using precomputed weights, specify the `--precalc_weigh
 
 ```bash
 netcdf2region \
-    --netcdf data/gridded_data/ERA5_sample.nc \
+    --netcdf ERA5_sample.nc \
     --precalc_weights ERA5_to_GADM36_admin1_weights.csv \
     --method mean \
-    --output results/ERA5_admin1_mean.csv \
+    --output ERA5_admin1_mean.csv \
     --var temperature
 ```
 
 This command computes the mean of the `temperature` variable for each region defined in the GADM 3.6 Admin 1 shapefile using the precomputed weights.
 
 
-## Example of executing weight calculations on a high-performance cluster
+## Example of Executing Weight Calculations on a HPC with Slurm Workload Manager
 
 This example assumes that the Python environment 'netcdf2region_env' is available, with the package installed.
 
@@ -112,11 +112,10 @@ module load anaconda
 source activate netcdf2region_env
 
 # Setup paths
-NETCDF_GRID="data/gridded_data/0p5deg.nc"
-SHAPEFILE="data/shapefiles/gadm36_levels.gpkg"
+NETCDF_GRID="ERA5_sample.nc"
+SHAPEFILE="gadm36_levels.gpkg"
 SHAPEFILE_LAYER=1
-WEIGHTS_OUTPUT="data/weights/ERA5_to_GADM36_l1_weights.csv"
-LAND_SEA_MASK="data/gridded_data/landseamask.nc"
+WEIGHTS_OUTPUT="ERA5_to_GADM36_admin1_weights.csv"
 
 # Settings for parallel computation
 NUMBER_OF_JOBS=16 # Number of parallel jobs set to the number of CPU cores

@@ -146,7 +146,7 @@ def main():
     parser.add_argument("--netcdf", required=True, help="Input NetCDF file")
     
     weight_group = parser.add_mutually_exclusive_group(required=True)
-    weight_group.add_argument("--weights", required=True, help="CSV file with grid weights (lat,lon,region_id,percent_overlap)")
+    weight_group.add_argument("--weights", help="CSV file with grid weights (lat,lon,region_id,percent_overlap)")
     weight_group.add_argument("--precalc_weights", help="Name of precalculated weights (e.g., ERA5_to_GADM36_admin1_weights.csv)")
 
     parser.add_argument("--method", required=True, choices=["mean", "sum", "std"], help="Aggregation method")
