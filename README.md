@@ -19,7 +19,7 @@ pip install .
 
 ### 1. Compute Grid Weights
 
-`compute_grid_weights` estimates the overlap between NetCDF grid cells and regions defined in a shapefile using point sampling. This step is performed separately to enable efficient repeated aggregations. The package also provides precomputed weights for common grids such as ERA5 and shapefiles like GADM 3.6, see section on 'Precualculated weights'.
+The `compute_grid_weights` command estimates the overlap between NetCDF grid cells and regions defined in a shapefile via point sampling. This step is performed separately to enable efficient repeated aggregations. The package also provides precomputed weights for common grids, such as ERA5, and shapefiles, such as GADM 3.6. See the section 'Precomputed weights' for more information.
 
 ```bash
 compute_grid_weights <netcdf> <shapefile> <output> [options]
@@ -44,7 +44,7 @@ compute_grid_weights <netcdf> <shapefile> <output> [options]
 See `--help` for more details.
 
 ### 2. Aggregate NetCDF Data
-`netcdf2region` aggregates gridded NetCDF data over regions using precomputed grid weights estimated via `compute_grid_weights`. The package also provides precomputed weights for common grids such as ERA5 and shapefiles like GADM 3.6, which can be used directly with the `--precalc_weights` option (see section on Precualculated weights).
+The `netcdf2region` command aggregates gridded NetCDF data over regions using precomputed grid weights, which are estimated via the `compute_grid_weights` command. The package also provides precomputed weights for common grids, such as ERA5, and shapefiles, such as GADM 3.6. These can be used directly with the `--precalc_weights` option (see the section 'Precomputed weights').
 
 ```bash
 netcdf2region \
@@ -70,12 +70,27 @@ netcdf2region \
 
 See the command-line help (`--help`) for more options and details.
 
-## Precualculated weights
-The package provides precomputed weights for common grids and shapefiles, which can be used directly with `netcdf2region` command.
+## Precomputed weights
+The package provides precomputed weights for standard grids and shapefiles that can be used immediately with the 'netcdf2region' command.
 
 | Grid         | Shapefile         | Weights file                                 |
 |--------------|-------------------|----------------------------------------------|
 | ERA5 0.5°   | GADM 3.6 Admin 1  | ERA5_to_GADM36_admin1_weights.csv            |
+
+### Example: Using Precomputed Weights
+
+To aggregate NetCDF data using precomputed weights, specify the `--precalc_weights` option with the name of the weights file. For example, to aggregate ERA5 data over GADM 3.6 Admin 1 regions:
+
+```bash
+netcdf2region \
+    --netcdf data/gridded_data/ERA5_sample.nc \
+    --precalc_weights ERA5_to_GADM36_admin1_weights.csv \
+    --method mean \
+    --output results/ERA5_admin1_mean.csv \
+    --var temperature
+```
+
+This command computes the mean of the `temperature` variable for each region defined in the GADM 3.6 Admin 1 shapefile using the precomputed weights.
 
 
 ## Example of executing weight calculations on a high-performance cluster
