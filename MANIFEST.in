@@ -1,0 +1,1 @@
+include netcdf2region/data/*.csv

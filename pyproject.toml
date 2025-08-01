@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netcdf2region"
+version = "0.1.0"
+description = "Aggregate NetCDF data to regions using spatial weights"
+authors = [{ name = "Jakob Wedemeyer", email = "jakob.wedemeyer@pik-potsdam.de" }]
+dependencies = [
+    "numpy",
+    "pandas",
+    "xarray",
+    "rasterio",
+    "geopandas",
+    "matplotlib",
+    "shapely",
+    "joblib",
+    "scipy",
+    "tqdm",
+    "netcdf4"
+]
+readme = "README.md"
+
+[project.scripts]
+compute_grid_weights = "netcdf2region.compute_grid_weights:main"
+netcdf2region = "netcdf2region.netcdf2region:main"
+
+[tool.setuptools.package-data]
+"netcdf2region" = ["data/weights/*.csv"]

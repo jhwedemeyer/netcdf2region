@@ -1,0 +1,123 @@
+# netcdf2region
+
+`netcdf2region` is a Python package providing command-line tools for aggregating gridded NetCDF files over regions defined by shapefiles. It is designed to facilitate spatial analysis and extraction of regional statistics from large climate or geospatial datasets.
+
+## Features
+
+- Aggregate gridded NetCDF data by custom regions (e.g., administrative boundaries, ecozones).
+- Support for shapefile-based region definitions.
+- Efficient processing of large datasets.
+- Command-line interface for easy integration into workflows.
+
+## Installation
+
+```bash
+pip install .
+```
+
+## Usage
+
+### 1. Compute Grid Weights
+
+`compute_grid_weights.py` estimates the overlap between NetCDF grid cells and regions defined in a shapefile using point sampling. This step is performed separately to enable efficient repeated aggregations.
+
+```bash
+python compute_grid_weights.py <netcdf> <shapefile> <output> [options]
+```
+
+#### Positional Arguments
+
+- `<netcdf>`: Path to the NetCDF file with latitude/longitude grid.
+- `<shapefile>`: Path to the shapefile defining regions (e.g., `.shp`).
+- `<output>`: Path to the output CSV file for computed grid weights.
+
+#### Options
+
+- `--points_per_cell <int>`: Number of random points per grid cell (default: 100).
+- `--simplify`: Simplify region geometries for faster computation.
+- `--land_sea_mask <file>`: Path to a land-sea mask NetCDF file for faster computation (optional).
+- `--shapefile_layer <int>`: Layer number in the shapefile to use (default: first layer).
+- `--backend <str>`: Parallel backend to use (`threading` by default).
+- `--n_jobs <int>`: Number of parallel jobs (default: 8).
+- `--yes`: Automatically answer yes to prompts.
+
+See `--help` for more details.
+
+### 2. Aggregate NetCDF Data
+`netcdf2region.py` aggregates gridded NetCDF data over regions using precomputed grid weights.
+
+```bash
+python netcdf2region.py \
+    --netcdf <input.nc> \
+    (--weights <weights.csv> | --precalc_weights <precalc_weights_name>) \
+    --method <mean|sum|std> \
+    --output <output.csv> \
+    --var <variable_name> \
+    [--correct_weights] \
+    [--time_var <time_variable>]
+```
+
+#### Arguments
+
+- `--netcdf`: Path to the input NetCDF file.
+- `--weights`: Path to the CSV file with grid weights (`lat,lon,region_id,percent_overlap`). Mutually exclusive with `--precalc_weights`.
+- `--precalc_weights`: Name of a precalculated weights file (e.g., `ERA5_to_GADM36_admin1_weights.csv`). Mutually exclusive with `--weights`.
+- `--method`: Aggregation method (`mean`, `sum`, or `std`).
+- `--output`: Path to the output CSV file.
+- `--var`: Name of the variable in the NetCDF file to aggregate.
+- `--correct_weights`: (Optional) If set, corrects weights to ensure no values are attributed to the sea.
+- `--time_var`: (Optional) Name of the time variable in the NetCDF file (if not automatically detected).
+
+See the command-line help (`--help`) for more options and details.
+
+## Example of executing weight calculations on a high-performance cluster
+
+This example assumes that the Python environment 'netcdf2region_env' is available, with the package installed.
+
+```bash
+#!/bin/bash 
+#SBATCH --qos=priority
+#SBATCH --account=<account_name>
+#SBATCH --nodes=1 
+#SBATCH --ntasks-per-node=1 
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=60000
+
+# Setup python environment
+module purge
+module load anaconda
+source activate netcdf2region_env
+
+# Setup paths
+NETCDF_GRID="data/gridded_data/0p5deg.nc"
+SHAPEFILE="data/shapefiles/gadm36_levels.gpkg"
+SHAPEFILE_LAYER=1
+WEIGHTS_OUTPUT="data/weights/ERA5_to_GADM36_l1_weights.csv"
+LAND_SEA_MASK="data/gridded_data/landseamask.nc"
+
+# Settings for parallel computation
+NUMBER_OF_JOBS=16 # Number of parallel jobs set to the number of CPU cores
+BACKEND="loky" # Backend for parallel processing, use 'loky' when using the cluster with a lot of memory otherwise use 'threading'
+
+# Run the Python script
+compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --yes --shapefile_layer=$SHAPEFILE_LAYER --n_jobs=$NUMBER_OF_JOBS --backend=$BACKEND
+```
+
+## Requirements
+
+- Python 3.7+
+- numpy
+- pandas
+- xarray
+- rasterio
+- geopandas
+- matplotlib
+- shapely
+- joblib
+- scipy
+- tqdm
+- netCDF4
+
+## Contributing
+
+Contributions are welcome! Please open issues or pull requests.
