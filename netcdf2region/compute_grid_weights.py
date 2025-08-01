@@ -13,7 +13,7 @@ from scipy.ndimage import maximum_filter
 import os
 
 
-def load_template_grid(netcdf_path, yes=False):
+def load_template_grid(netcdf_path, coordinate_origin = "centered", yes=False):
     """Load the NetCDF grid and infer its properties."""
 
     # Load NetCDF grid
@@ -59,33 +59,9 @@ def load_template_grid(netcdf_path, yes=False):
     lon_res = np.abs(lons[1] - lons[0])
     print(f"Grid resolution: {lat_res:.2f}° latitude × {lon_res:.2f}° longitude")
 
-    # Infer grid origin: if min lat/lon is not -90/-180 but close to -90+res/2 or -180+res/2, it's likely centered
-    lat_centered = np.isclose(lats.min(), -90 + lat_res / 2, atol=1e-2)
-    lon_centered = np.isclose(lons.min(), -180 + lon_res / 2, atol=1e-2)
-    centered = lat_centered and lon_centered
-    top_left = (lats.min()) == -90 & (lons.min() == -180)
-
-    coordinate_origin = None
-    if centered:
-        coordinate_origin = "centered"
-        if not yes:
-            resp = input("Grid origin is centered, correct? (y/n): ")
-        else:
-            resp = 'y'
-        if resp.lower() != 'y':
-            print("Please check your lat/lon values. If they are centered, they should start at -90 + res/2 and -180 + res/2.")
-            raise ValueError("Grid origin is not recognized as centered or top-left. Please check your lat/lon values.")
-    elif top_left:
-        coordinate_origin = "top-left"
-        if not yes:
-            resp = input("Grid origin is the top-left corner, correct? (y/n): ")
-        else:
-            resp = 'y'
-        if resp.lower() != 'y':
-            print("Please check your lat/lon values. If they are top-left, they should start at -90 and -180.")
-            raise ValueError("Grid origin is not recognized as centered or top-left. Please check your lat/lon values.")
-    else:
-        raise ValueError("Grid origin is not recognized as centered or top-left. Please check your lat/lon values.")
+    # Check coordinate origin
+    if coordinate_origin not in ["centered", "top-left"]:
+        raise ValueError("Invalid coordinate origin. Must be 'centered' or 'top-left'.")
 
     # check if lats/lons are sorted
     if not np.all(np.diff(lons) > 0):
@@ -258,13 +234,16 @@ def calc_cell_region_overlap(point_gdf, regions, points_per_cell, n_jobs=8, n_ba
 
     return grouped
 
-def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell=100, simplify=True, mask_nc_path=None, shapefile_layer=None, point_distribution="uniform", backend='threading', n_jobs=8, yes=False):
+def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell=100, \
+                    simplify=True, mask_nc_path=None, shapefile_layer=None, \
+                    point_distribution="uniform", backend='threading', n_jobs=8, \
+                    yes=False, coordinate_origin="centered"):
     """Estimate region overlaps with NetCDF grid cells via point sampling."""
     if yes:
         print("Automatic 'yes' mode enabled. All prompts will be answered with 'yes'.")
 
     # Load the NetCDF grid
-    coordinates = load_template_grid(netcdf_path, yes=yes)
+    coordinates = load_template_grid(netcdf_path, coordinate_origin=coordinate_origin, yes=yes)
 
     # Load land-sea mask if available
     if mask_nc_path is not None:
@@ -316,6 +295,8 @@ def main():
     parser.add_argument("--backend", default="threading", help="Parallel backend to use (default: threading)")
     parser.add_argument("--n_jobs", type=int, default=8, help="Number of parallel jobs (default: 8)")
     parser.add_argument("--yes", action="store_true", help="Automatically answer yes to prompts")
+    parser.add_argument("--coordinate_origin", choices=["centered", "top-left"], default="centered",
+                        help="Coordinate origin of the grid (default: centered)")
     args = parser.parse_args()
 
     compute_overlap(
@@ -329,7 +310,8 @@ def main():
         point_distribution="uniform",
         backend=args.backend,
         n_jobs=args.n_jobs,
-        yes=args.yes
+        yes=args.yes,
+        coordinate_origin=args.coordinate_origin
     )
 
 if __name__ == "__main__":

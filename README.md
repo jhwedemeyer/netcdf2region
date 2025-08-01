@@ -39,6 +39,7 @@ compute_grid_weights <netcdf> <shapefile> <output> [options]
 - `--shapefile_layer <int>`: Layer number in the shapefile to use (default: first layer).
 - `--backend <str>`: Parallel backend to use (`threading` by default).
 - `--n_jobs <int>`: Number of parallel jobs (default: 8).
+- `--coordinate_origin <str>`: Coordinate origin of the grid (default: centered).
 - `--yes`: Automatically answer yes to prompts.
 
 See `--help` for more details.
@@ -96,7 +97,7 @@ This command computes the mean of the `temperature` variable for each region def
 ## Example of Executing Weight Calculations on a HPC with Slurm Workload Manager
 
 This example assumes that the Python environment 'netcdf2region_env' is available, with the package installed:
-``bash
+```bash
 conda create -n netcdf2region_env -c anaconda
 pip install /path/to/netcdf2region
 ```

@@ -140,6 +140,7 @@ def aggregate(netcdf, weights, method, output, var, correct_weights_flag=False, 
         results.append(region_results)
 
     # Convert results to DataFrame and write to CSV
+    print("Merging results and writing to output CSV to ", output)
     out_df = pd.concat(results)
     out_df.to_csv(output, index=False)
 
