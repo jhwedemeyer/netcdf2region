@@ -6,6 +6,7 @@ import xarray as xr
 from importlib.resources import files
 
 def precalc_weights_path(name: str):
+    """ Get the path to a precalculated weights file from the package data. """
     try:
         path = files("netcdf2region.data").joinpath(name)
         return path

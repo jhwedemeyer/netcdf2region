@@ -27,4 +27,4 @@ compute_grid_weights = "netcdf2region.compute_grid_weights:main"
 netcdf2region = "netcdf2region.netcdf2region:main"
 
 [tool.setuptools.package-data]
-"netcdf2region" = ["data/weights/*.csv"]
+"netcdf2region" = ["data/*.csv"]

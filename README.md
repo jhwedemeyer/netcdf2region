@@ -95,8 +95,13 @@ This command computes the mean of the `temperature` variable for each region def
 
 ## Example of Executing Weight Calculations on a HPC with Slurm Workload Manager
 
-This example assumes that the Python environment 'netcdf2region_env' is available, with the package installed.
-
+This example assumes that the Python environment 'netcdf2region_env' is available, with the package installed:
+``bash
+conda create -n netcdf2region_env -c anaconda
+pip install /path/to/netcdf2region
+```
+ 
+SLURM script to be executed with `sbatch`:
 ```bash
 #!/bin/bash 
 #SBATCH --qos=priority
