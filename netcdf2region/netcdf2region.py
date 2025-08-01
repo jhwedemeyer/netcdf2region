@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import xarray as xr
 from importlib.resources import files
+from tqdm import tqdm
 
 def precalc_weights_path(name: str):
     """ Get the path to a precalculated weights file from the package data. """
@@ -86,18 +87,20 @@ def aggregate(netcdf, weights, method, output, var, correct_weights_flag=False, 
     """ Aggregate gridded NetCDF data to regions using weights. """
 
     # Load weights CSV file (should contain columns: lat, lon, region_id, percent_overlap)
+    print(f"Loading weights file: {weights}")
     weights_df = pd.read_csv(weights)
     if correct_weights_flag:
         weights_df = correct_weights(weights_df)
 
     # Load NetCDF data
+    print(f"Loading NetCDF file: {netcdf}")
     var_data, lats, lons, time_var = load_netcdf(netcdf, var, time_var=time_var_name)
 
     results = []
 
 
     # Loop over each unique region
-    for region_id in weights_df['region_id'].unique():
+    for region_id in tqdm(weights_df['region_id'].unique(), desc="Aggregating regions"):
 
         # Select weights for the current region
         region_weights = weights_df[weights_df['region_id'] == region_id]
