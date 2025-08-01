@@ -19,10 +19,10 @@ pip install .
 
 ### 1. Compute Grid Weights
 
-`compute_grid_weights.py` estimates the overlap between NetCDF grid cells and regions defined in a shapefile using point sampling. This step is performed separately to enable efficient repeated aggregations.
+`compute_grid_weights` estimates the overlap between NetCDF grid cells and regions defined in a shapefile using point sampling. This step is performed separately to enable efficient repeated aggregations. The package also provides precomputed weights for common grids such as ERA5 and shapefiles like GADM 3.6, see section on 'Precualculated weights'.
 
 ```bash
-python compute_grid_weights.py <netcdf> <shapefile> <output> [options]
+compute_grid_weights <netcdf> <shapefile> <output> [options]
 ```
 
 #### Positional Arguments
@@ -44,10 +44,10 @@ python compute_grid_weights.py <netcdf> <shapefile> <output> [options]
 See `--help` for more details.
 
 ### 2. Aggregate NetCDF Data
-`netcdf2region.py` aggregates gridded NetCDF data over regions using precomputed grid weights.
+`netcdf2region` aggregates gridded NetCDF data over regions using precomputed grid weights estimated via `compute_grid_weights`. The package also provides precomputed weights for common grids such as ERA5 and shapefiles like GADM 3.6, which can be used directly with the `--precalc_weights` option (see section on Precualculated weights).
 
 ```bash
-python netcdf2region.py \
+netcdf2region \
     --netcdf <input.nc> \
     (--weights <weights.csv> | --precalc_weights <precalc_weights_name>) \
     --method <mean|sum|std> \
@@ -61,7 +61,7 @@ python netcdf2region.py \
 
 - `--netcdf`: Path to the input NetCDF file.
 - `--weights`: Path to the CSV file with grid weights (`lat,lon,region_id,percent_overlap`). Mutually exclusive with `--precalc_weights`.
-- `--precalc_weights`: Name of a precalculated weights file (e.g., `ERA5_to_GADM36_admin1_weights.csv`). Mutually exclusive with `--weights`.
+- `--precalc_weights`: Name of a predefined weights file (e.g., `ERA5_to_GADM36_admin1_weights.csv`). Mutually exclusive with `--weights`.
 - `--method`: Aggregation method (`mean`, `sum`, or `std`).
 - `--output`: Path to the output CSV file.
 - `--var`: Name of the variable in the NetCDF file to aggregate.
@@ -69,6 +69,14 @@ python netcdf2region.py \
 - `--time_var`: (Optional) Name of the time variable in the NetCDF file (if not automatically detected).
 
 See the command-line help (`--help`) for more options and details.
+
+## Precualculated weights
+The package provides precomputed weights for common grids and shapefiles, which can be used directly with `netcdf2region` command.
+
+| Grid         | Shapefile         | Weights file                                 |
+|--------------|-------------------|----------------------------------------------|
+| ERA5 0.5°   | GADM 3.6 Admin 1  | ERA5_to_GADM36_admin1_weights.csv            |
+
 
 ## Example of executing weight calculations on a high-performance cluster
 
