@@ -76,7 +76,13 @@ The package provides precomputed weights for standard grids and shapefiles that 
 
 | Grid         | Shapefile         | Weights file                                 |
 |--------------|-------------------|----------------------------------------------|
-| ERA5 0.5°   | GADM 3.6 Admin 1  | ERA5_to_GADM36_admin1_weights.csv            |
+| ISIMIP 0.5°  | GADM 3.6 Admin 0  | ISIMIP_to_GADM36_admin0_weights.csv          |
+| ISIMIP 0.5°  | GADM 3.6 Admin 1  | ISIMIP_to_GADM36_admin1_weights.csv          |
+| ISIMIP 0.5°  | DOSE Admin 1      | ISIMIP_to_DOSE_admin1_weights.csv            |
+| ERA5 0.25°   | GADM 3.6 Admin 0  | ERA5_to_GADM36_admin0_weights.csv            |
+| ERA5 0.25°   | GADM 3.6 Admin 1  | ERA5_to_GADM36_admin1_weights.csv            |
+| ERA5 0.25°   | DOSE Admin 1      | ERA5_to_DOSE_admin1_weights.csv              |
+
 
 ### Example: Using Precomputed Weights
 
@@ -125,10 +131,9 @@ WEIGHTS_OUTPUT="ERA5_to_GADM36_admin1_weights.csv"
 
 # Settings for parallel computation
 NUMBER_OF_JOBS=16 # Number of parallel jobs set to the number of CPU cores
-BACKEND="loky" # Backend for parallel processing, use 'loky' when using the cluster with a lot of memory otherwise use 'threading'
 
 # Run the Python script
-compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --yes --shapefile_layer=$SHAPEFILE_LAYER --n_jobs=$NUMBER_OF_JOBS --backend=$BACKEND
+compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --yes --shapefile_layer=$SHAPEFILE_LAYER --n_jobs=$NUMBER_OF_JOBS
 ```
 
 ## Requirements
