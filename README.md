@@ -12,7 +12,7 @@
 ## Installation
 
 ```bash
-pip install .
+pip install netcdf2region
 ```
 
 ## Usage
@@ -68,7 +68,7 @@ netcdf2region \
 - `--var`: Name of the variable in the NetCDF file to aggregate.
 - `--correct_weights`: (Optional) If set, corrects weights to ensure no values are attributed to the sea.
 - `--time_var`: (Optional) Name of the time variable in the NetCDF file (if not automatically detected).
-
+^^
 See the command-line help (`--help`) for more options and details.
 
 ## Precomputed weights
