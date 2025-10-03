@@ -14,6 +14,9 @@
 ```bash
 pip install netcdf2region
 ```
+## Disclaimer
+
+This package is still in the early stages of development. Please check that all outputs are valid, as errors during calculation may still occur.
 
 ## Usage
 
