@@ -118,11 +118,11 @@ def load_land_sea_mask(mask_nc_path, coordinates, yes=False):
     
     return mask
 
-def load_regions(shapefile_path, simplify=True, shapefile_layer=None, yes=False):
+def load_regions(shapefile_path, simplify=True, shapefile_layer=None, yes=False, default_gid = "GID_1"):
     """Load regions from a shapefile and optionally simplify geometries."""
 
     regions = gpd.read_file(shapefile_path, layer=shapefile_layer).to_crs("EPSG:4326")
-    if 'GID_1' in regions.columns:
+    if default_gid in regions.columns:
         regions = regions.rename(columns={'GID_1': 'region_id'})
     elif 'GID_0' in regions.columns:
         regions = regions.rename(columns={'GID_0': 'region_id'})
@@ -237,7 +237,7 @@ def calc_cell_region_overlap(point_gdf, regions, points_per_cell, n_jobs=8, n_ba
 def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell=100, \
                     simplify=True, mask_nc_path=None, shapefile_layer=None, \
                     point_distribution="uniform", backend='threading', n_jobs=8, \
-                    yes=False, coordinate_origin="centered"):
+                    yes=False, coordinate_origin="centered", default_gid="GID_1"):
     """Estimate region overlaps with NetCDF grid cells via point sampling."""
     if yes:
         print("Automatic 'yes' mode enabled. All prompts will be answered with 'yes'.")
@@ -254,7 +254,7 @@ def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell=100
 
     # Load regions
     print(f"Loading shapefile: {shapefile_path}")
-    regions = load_regions(shapefile_path, simplify=simplify, shapefile_layer=shapefile_layer, yes=yes)
+    regions = load_regions(shapefile_path, simplify=simplify, shapefile_layer=shapefile_layer, yes=yes, default_gid=default_gid)
 
     # Generate points for each grid cell
     print(f"Generating {point_distribution}-distributed points for all {len(coordinates['lat'])-1}×{len(coordinates['lon'])-1} grid cells...")
@@ -294,6 +294,7 @@ def main():
     parser.add_argument("--shapefile_layer", default=None, type=int, help="Layer number in shapefile to use (default: None, uses first layer)")
     parser.add_argument("--backend", default="threading", help="Parallel backend to use (default: threading)")
     parser.add_argument("--n_jobs", type=int, default=8, help="Number of parallel jobs (default: 8)")
+    parser.add_argument("--gid", type=str, default="GID_1", help="Geo identifier in the shapefile (default: GID_1)")
     parser.add_argument("--yes", action="store_true", help="Automatically answer yes to prompts")
     parser.add_argument("--coordinate_origin", choices=["centered", "top-left"], default="centered",
                         help="Coordinate origin of the grid (default: centered)")
@@ -311,7 +312,8 @@ def main():
         backend=args.backend,
         n_jobs=args.n_jobs,
         yes=args.yes,
-        coordinate_origin=args.coordinate_origin
+        coordinate_origin=args.coordinate_origin,
+        default_gid=args.gid
     )
 
 if __name__ == "__main__":
