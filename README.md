@@ -43,6 +43,7 @@ compute_grid_weights <netcdf> <shapefile> <output> [options]
 - `--backend <str>`: Parallel backend to use (`threading` by default).
 - `--n_jobs <int>`: Number of parallel jobs (default: 8).
 - `--coordinate_origin <str>`: Coordinate origin of the grid (default: centered).
+- `--gid <str>`: Geo identifier of the shapefile (default: GID_1)
 - `--yes`: Automatically answer yes to prompts.
 
 See `--help` for more details.
