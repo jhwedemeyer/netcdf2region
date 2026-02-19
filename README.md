@@ -37,6 +37,7 @@ compute_grid_weights <netcdf> <shapefile> <output> [options]
 #### Options
 
 - `--points_per_cell <int>`: Number of random points per grid cell (default: 100).
+- `--point_distribution <uniform|random>`: Distribution of points within grid cells (default: uniform)
 - `--simplify`: Simplify region geometries for faster computation.
 - `--land_sea_mask <file>`: Path to a land-sea mask NetCDF file for faster computation (optional).
 - `--shapefile_layer <int>`: Layer number in the shapefile to use (default: first layer).
@@ -44,6 +45,7 @@ compute_grid_weights <netcdf> <shapefile> <output> [options]
 - `--n_jobs <int>`: Number of parallel jobs (default: 8).
 - `--coordinate_origin <str>`: Coordinate origin of the grid (default: centered).
 - `--gid <str>`: Geo identifier of the shapefile (default: GID_1)
+- `--shift_longitudes`: Shift longitudes from [0, 360] to [-180, 180]
 - `--yes`: Automatically answer yes to prompts.
 
 See `--help` for more details.
@@ -82,7 +84,7 @@ The package provides precomputed weights for standard grids and shapefiles that 
 |--------------|-------------------|----------------------------------------------|
 | ISIMIP 0.5°  | GADM 3.6 Admin 0  | ISIMIP_to_GADM36_admin0_weights.csv          |
 | ISIMIP 0.5°  | GADM 3.6 Admin 1  | ISIMIP_to_GADM36_admin1_weights.csv          |
-| ISIMIP 0.5°  | DOSE Admin 1      | ISIMIP_to_DOSE_admin1_weights.csv            |
+| ISIMIP 0.5°  | DOSE V2 Admin 1   | ISIMIP_to_DOSE_admin1_weights.csv            |
 | ERA5 0.25°   | GADM 3.6 Admin 0  | ERA5_to_GADM36_admin0_weights.csv            |
 | ERA5 0.25°   | GADM 3.6 Admin 1  | ERA5_to_GADM36_admin1_weights.csv            |
 | ERA5 0.25°   | DOSE Admin 1      | ERA5_to_DOSE_admin1_weights.csv              |

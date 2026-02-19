@@ -13,7 +13,7 @@ from scipy.ndimage import maximum_filter
 import os
 
 
-def load_template_grid(netcdf_path, coordinate_origin = "centered", yes=False):
+def load_template_grid(netcdf_path, coordinate_origin, shift_longitudes):
     """Load the NetCDF grid and infer its properties."""
 
     # Load NetCDF grid
@@ -23,6 +23,9 @@ def load_template_grid(netcdf_path, coordinate_origin = "centered", yes=False):
         raise FileNotFoundError(f"NetCDF file not found: {netcdf_path}")
 
     ds = xr.open_dataset(netcdf_path)
+    if 'time' in ds.dims:
+        ds = ds.isel(time=0)
+
     if 'lat' in ds:
         lats = ds['lat'].values
     elif 'latitude' in ds:
@@ -42,17 +45,20 @@ def load_template_grid(netcdf_path, coordinate_origin = "centered", yes=False):
         raise ValueError("Latitude values are not in EPSG:4326 range (-90 to 90).")
     if not np.all((lons >= -180) & (lons <= 180)):
         # Try shifting longitude if out of range
-        if np.all((lons >= 0) & (lons <= 360)):
-            print("Shifting longitudes from [0, 360] to [-180, 180].")
-            print("Double check if this works for your data!")
-            lons = ((lons + 180) % 360) - 180
-            # Sort longitudes and reorder data accordingly
-            sort_idx = np.argsort(lons)
-            lons = lons[sort_idx]
-            ds = ds.assign_coords(lon=lons)
-            ds = ds.sortby('lon')
-        else:
-            raise ValueError("Longitude values are not in EPSG:4326 range (-180 to 180 or 0 to 360).")
+        if shift_longitudes:
+            if np.all((lons >= 0) & (lons <= 360)):
+                print("Shifting longitudes from [0, 360] to [-180, 180].")
+                print("Double check if this works for your data!")
+                lons = ((lons + 180) % 360) - 180
+                # Sort longitudes and reorder data accordingly
+                sort_idx = np.argsort(lons)
+                lons = lons[sort_idx]
+                ds = ds.assign_coords(lon=lons)
+                ds = ds.sortby('lon')
+            else:
+                raise ValueError("Longitude values are not in EPSG:4326 range (-180 to 180 or 0 to 360).")
+        else: 
+            raise ValueError("Longitude values are not in EPSG:4326 range (-180 to 180 or 0 to 360). You might want to enable longitude shifting with the --shift_longitudes flag if your data uses [0, 360] range.")
         
     # Calculate grid resolution
     lat_res = np.abs(lats[1] - lats[0])
@@ -81,6 +87,8 @@ def load_land_sea_mask(mask_nc_path, coordinates, yes=False):
     """Load the land-sea mask NetCDF and verify its shape matches the grid."""
     lats = coordinates['lat']
     lons = coordinates['lon']
+
+    print("Warning: Using a land-sea mask could result in lower weight quality in areas containing a large number of ocean cells. Consider using a higher resolution mask or no mask if you encounter issues with weight quality.")
 
     if not os.path.exists(mask_nc_path):
         raise FileNotFoundError(f"Land-sea mask file not found: {mask_nc_path}")
@@ -118,7 +126,7 @@ def load_land_sea_mask(mask_nc_path, coordinates, yes=False):
     
     return mask
 
-def load_regions(shapefile_path, simplify=True, shapefile_layer=None, yes=False, default_gid = "GID_1"):
+def load_regions(shapefile_path, simplify, shapefile_layer, default_gid, yes=False):
     """Load regions from a shapefile and optionally simplify geometries."""
 
     regions = gpd.read_file(shapefile_path, layer=shapefile_layer).to_crs("EPSG:4326")
@@ -211,7 +219,7 @@ def generate_point_distribution(mask, coordinates, points_per_cell, point_distri
     
     return point_gdf, cell_coords
 
-def calc_cell_region_overlap(point_gdf, regions, points_per_cell, n_jobs=8, n_batches=None, backend='threading'):
+def calc_cell_region_overlap(point_gdf, regions, points_per_cell, n_jobs, n_batches, backend):
     """Calculate overlaps between grid cells and regions using point sampling."""
 
     def sjoin_batch(batch):
@@ -234,16 +242,15 @@ def calc_cell_region_overlap(point_gdf, regions, points_per_cell, n_jobs=8, n_ba
 
     return grouped
 
-def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell=100, \
-                    simplify=True, mask_nc_path=None, shapefile_layer=None, \
-                    point_distribution="uniform", backend='threading', n_jobs=8, \
-                    yes=False, coordinate_origin="centered", default_gid="GID_1"):
+def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell, \
+                    simplify, mask_nc_path, shapefile_layer, \
+                    point_distribution, backend, n_jobs, \
+                    yes, coordinate_origin, default_gid,
+                    shift_longitudes):
     """Estimate region overlaps with NetCDF grid cells via point sampling."""
-    if yes:
-        print("Automatic 'yes' mode enabled. All prompts will be answered with 'yes'.")
 
     # Load the NetCDF grid
-    coordinates = load_template_grid(netcdf_path, coordinate_origin=coordinate_origin, yes=yes)
+    coordinates = load_template_grid(netcdf_path, coordinate_origin=coordinate_origin, shift_longitudes=shift_longitudes)
 
     # Load land-sea mask if available
     if mask_nc_path is not None:
@@ -289,6 +296,7 @@ def main():
     parser.add_argument("shapefile", help="Path to shapefile (e.g., .shp)")
     parser.add_argument("output", help="Path to output CSV file")
     parser.add_argument("--points_per_cell", type=int, default=100, help="Number of random points per grid cell (default: 100)")
+    parser.add_argument("--point_distribution", choices=["random", "uniform"], default="uniform", help="Distribution of points within grid cells (default: uniform)")
     parser.add_argument("--simplify", action="store_true", help="Simplify region geometries")
     parser.add_argument("--land_sea_mask", default=None, help="Path to land-sea mask NetCDF file (optional)")
     parser.add_argument("--shapefile_layer", default=None, type=int, help="Layer number in shapefile to use (default: None, uses first layer)")
@@ -298,7 +306,12 @@ def main():
     parser.add_argument("--yes", action="store_true", help="Automatically answer yes to prompts")
     parser.add_argument("--coordinate_origin", choices=["centered", "top-left"], default="centered",
                         help="Coordinate origin of the grid (default: centered)")
+    parser.add_argument("--shift_longitudes", action="store_true", help="Shift longitudes from [0, 360] to [-180, 180]")    
     args = parser.parse_args()
+
+    if args.yes:
+        print("Automatic 'yes' mode enabled. All prompts will be answered with 'yes'. This may lead to incorrect assumptions if the script cannot automatically determine certain parameters. Use with caution.")
+
 
     compute_overlap(
         netcdf_path=args.netcdf,
@@ -308,12 +321,13 @@ def main():
         simplify=args.simplify,
         mask_nc_path=args.land_sea_mask,
         shapefile_layer=args.shapefile_layer,
-        point_distribution="uniform",
+        point_distribution=args.point_distribution,
         backend=args.backend,
         n_jobs=args.n_jobs,
         yes=args.yes,
         coordinate_origin=args.coordinate_origin,
-        default_gid=args.gid
+        default_gid=args.gid,
+        shift_longitudes=args.shift_longitudes
     )
 
 if __name__ == "__main__":
