@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "netcdf2region"
-version = "0.1.3"
+version = "0.1.4"
 description = "Aggregate NetCDF data to regions using spatial weights"
 authors = [{ name = "Jakob Wedemeyer", email = "jakob.wedemeyer@pik-potsdam.de" }]
 dependencies = [
