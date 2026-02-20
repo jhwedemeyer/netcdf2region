@@ -227,7 +227,12 @@ def calc_cell_region_overlap(point_gdf, regions, points_per_cell, n_jobs, backen
 
     if n_batches is None:
         n_batches = n_jobs * 2  # default to double the number of jobs for better load balancing
-    batches = np.array_split(point_gdf, n_batches)
+
+    # Convert to list of indices instead of using np.array_split which can trigger deprecated methods
+    #batches = np.array_split(point_gdf, n_batches)
+    indices = np.array_split(np.arange(len(point_gdf)), n_batches)
+    batches = [point_gdf.iloc[idx] for idx in indices]
+
     results = Parallel(n_jobs=n_jobs, backend=backend)(delayed(sjoin_batch)(b) for b in batches)
     joined = pd.concat(results)
 
