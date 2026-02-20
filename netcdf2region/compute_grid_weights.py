@@ -219,7 +219,7 @@ def generate_point_distribution(mask, coordinates, points_per_cell, point_distri
     
     return point_gdf, cell_coords
 
-def calc_cell_region_overlap(point_gdf, regions, points_per_cell, n_jobs, n_batches, backend):
+def calc_cell_region_overlap(point_gdf, regions, points_per_cell, n_jobs, backend, n_batches=None):
     """Calculate overlaps between grid cells and regions using point sampling."""
 
     def sjoin_batch(batch):
