@@ -124,6 +124,9 @@ SLURM script to be executed with `sbatch`:
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=60000
 
+# Important to be able to find netcdf2region
+export PATH="$HOME/.local/bin:$PATH"
+
 # Setup python environment
 module purge
 module load anaconda
