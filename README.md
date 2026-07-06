@@ -115,7 +115,7 @@ This command computes the mean of the `temperature` variable for each region def
 This example assumes that the Python environment 'netcdf2region_env' is available, with the package installed:
 ```bash
 conda create -n netcdf2region_env -c anaconda
-pip install /path/to/netcdf2region
+pip install netcdf2region
 ```
  
 SLURM script to be executed with `sbatch`:
