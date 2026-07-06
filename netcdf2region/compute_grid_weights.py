@@ -269,17 +269,21 @@ def cell_bounds(i, j, coordinates):
         lon1, lon2 = lons[j], lons[j + 1]
     return min(lon1, lon2), min(lat1, lat2), max(lon1, lon2), max(lat1, lat2)
 
-def assign_missing_regions(grouped, regions, coordinates):
-    """Assign weights to regions that received no sampled points via exact overlap.
+def assign_missing_regions(present_ids, regions, coordinates):
+    """Assign weights to regions with no sampled overlap via exact geometry.
 
     Point sampling misses regions that are smaller than the point spacing (no sample
-    point ever falls inside them), so they never appear in ``grouped`` and would be
-    silently dropped from the weights CSV. For each such region this computes the exact
-    geometric overlap fraction ``area(region ∩ cell) / area(cell)`` with every grid cell
-    it intersects and returns those rows so the region is represented.
+    point ever falls inside them), so they never appear in the sampled weights and would
+    be silently dropped from the CSV. For each region whose id is not in ``present_ids``
+    this computes the exact geometric overlap fraction ``area(region ∩ cell) / area(cell)``
+    with every grid cell it intersects and returns those rows so the region is represented.
 
     Operates on true geometry, so a region is assigned even to a cell that a land-sea
-    mask excluded from sampling. Returns a DataFrame with columns
+    mask excluded from sampling. Cells whose overlap is a negligible sliver (rounds to
+    zero) are dropped rather than emitted as useless ``0.0`` rows; if that would leave a
+    region with no cell at all, its single largest-overlap cell is kept with a small
+    positive floor so the region stays represented (and downstream mean/std don't hit a
+    ZeroDivisionError). Returns a DataFrame with columns
     ``lat, lon, region_id, percent_overlap`` (empty if no regions are missing).
     """
     lats = coordinates['lat']
@@ -292,8 +296,7 @@ def assign_missing_regions(grouped, regions, coordinates):
     else:  # top-left
         n_lat, n_lon = len(lats) - 1, len(lons) - 1
 
-    present = set(grouped["region_id"].unique())
-    missing = regions[~regions["region_id"].isin(present)]
+    missing = regions[~regions["region_id"].isin(present_ids)]
     if missing.empty:
         return pd.DataFrame(columns=["lat", "lon", "region_id", "percent_overlap"])
 
@@ -320,6 +323,8 @@ def assign_missing_regions(grouped, regions, coordinates):
         cand_j = np.where((lon_hi >= minx) & (lon_lo <= maxx))[0]
 
         region_rows = []
+        best_row = None
+        best_area = 0.0
         for i in cand_i:
             for j in cand_j:
                 lo_x, lo_y, hi_x, hi_y = cell_bounds(i, j, coordinates)
@@ -329,23 +334,28 @@ def assign_missing_regions(grouped, regions, coordinates):
                 inter_area = geom.intersection(cell).area
                 if inter_area <= 0:
                     continue
-                percent = inter_area / cell.area
-                region_rows.append({
+                row = {
                     "lat": round(lats[i], 3),
                     "lon": round(lons[j], 3),
                     "region_id": region_id,
-                    "percent_overlap": round(percent, 6),
-                })
+                    "percent_overlap": round(inter_area / cell.area, 6),
+                }
+                if inter_area > best_area:
+                    best_area, best_row = inter_area, row
+                # Drop negligible slivers that round to zero: a 0.0 weight is meaningless
+                # and only pollutes the output.
+                if row["percent_overlap"] > 0:
+                    region_rows.append(row)
 
+        if best_row is None:
+            continue  # region does not actually intersect any cell
+
+        # If every overlapping cell was a negligible sliver, keep the largest one with a
+        # small positive floor so the region is still represented.
         if not region_rows:
-            continue
+            best_row["percent_overlap"] = 1e-6
+            region_rows.append(best_row)
 
-        # Guarantee the region carries at least one strictly positive weight, even if
-        # every overlap rounded to 0.0 (otherwise downstream mean/std hit a
-        # ZeroDivisionError and the region becomes NaN).
-        if all(r["percent_overlap"] <= 0 for r in region_rows):
-            dominant = max(region_rows, key=lambda r: r["percent_overlap"])
-            dominant["percent_overlap"] = 1e-6
         rows.extend(region_rows)
 
     return pd.DataFrame(rows, columns=["lat", "lon", "region_id", "percent_overlap"])
@@ -393,14 +403,20 @@ def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell, \
             "percent_overlap": percent
         })
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=["lat", "lon", "region_id", "percent_overlap"])
 
-    # Rescue regions that no sample point fell into (typically very small regions) by
-    # computing their exact geometric overlap with the grid.
+    # Drop zero-weight rows: with a large --points_per_cell a single-point overlap can
+    # round to 0.0, which is a meaningless weight (and yields NaN in downstream mean/std).
+    df = df[df["percent_overlap"] > 0].reset_index(drop=True)
+
+    # Rescue any region not represented by a positive sampled weight (regions too small to
+    # catch a sample point, or whose only overlaps rounded to zero above) by computing
+    # their exact geometric overlap with the grid.
     print("Checking for regions with no sampled overlap...")
-    missing_rows = assign_missing_regions(grouped, regions, coordinates)
+    present_ids = set(df["region_id"].unique())
+    missing_rows = assign_missing_regions(present_ids, regions, coordinates)
     if not missing_rows.empty:
-        print(f"Rescued {missing_rows['region_id'].nunique()} region(s) with no sampled points via exact overlap.")
+        print(f"Rescued {missing_rows['region_id'].nunique()} region(s) with no sampled overlap via exact geometry.")
         df = pd.concat([df, missing_rows], ignore_index=True)
 
     df.to_csv(output_csv, index=False)
