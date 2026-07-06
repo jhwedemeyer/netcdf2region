@@ -180,16 +180,24 @@ def generate_point_distribution(mask, coordinates, points_per_cell, point_distri
     points = []
     cell_ids = []
     cell_coords = {}
-    
+
+    # Number of cells depends on the coordinate origin: for "centered" grids every
+    # coordinate is a cell center, so there are len(lats)/len(lons) cells. For "top-left"
+    # grids the coordinates are cell edges, so there is one fewer cell than coordinates.
+    if coordinate_origin == "centered":
+        n_lat, n_lon = len(lats), len(lons)
+    else:  # top-left
+        n_lat, n_lon = len(lats) - 1, len(lons) - 1
+
     if mask is not None:
         n_land_cells = np.sum(mask == 1)
-        print(f"Total grid cells: {len(lats)-1} x {len(lons)-1} = {(len(lats)-1)*(len(lons)-1)}")
+        print(f"Total grid cells: {n_lat} x {n_lon} = {n_lat*n_lon}")
         print(f"Land cells (mask=1): {n_land_cells}")
         print("Warning: Using a land-sea mask could result in lower weight quality in areas containing a large number of ocean cells.")
 
     # Loop over grid cells
-    for i in tqdm(range(len(lats) - 1)):
-        for j in range(len(lons) - 1):
+    for i in tqdm(range(n_lat)):
+        for j in range(n_lon):
             if mask is not None:
                 if mask[i, j] != 1:
                     # skip ocean/non-land cells
@@ -247,6 +255,101 @@ def calc_cell_region_overlap(point_gdf, regions, points_per_cell, n_jobs, backen
 
     return grouped
 
+def cell_bounds(i, j, coordinates):
+    """Return the (lon1, lat1, lon2, lat2) edges of grid cell (i, j)."""
+    lats = coordinates['lat']
+    lons = coordinates['lon']
+    lat_res = coordinates['lat_res']
+    lon_res = coordinates['lon_res']
+    if coordinates['coordinate_origin'] == "centered":
+        lat1, lat2 = lats[i] - lat_res / 2, lats[i] + lat_res / 2
+        lon1, lon2 = lons[j] - lon_res / 2, lons[j] + lon_res / 2
+    else:  # top-left: coordinates are cell edges
+        lat1, lat2 = lats[i], lats[i + 1]
+        lon1, lon2 = lons[j], lons[j + 1]
+    return min(lon1, lon2), min(lat1, lat2), max(lon1, lon2), max(lat1, lat2)
+
+def assign_missing_regions(grouped, regions, coordinates):
+    """Assign weights to regions that received no sampled points via exact overlap.
+
+    Point sampling misses regions that are smaller than the point spacing (no sample
+    point ever falls inside them), so they never appear in ``grouped`` and would be
+    silently dropped from the weights CSV. For each such region this computes the exact
+    geometric overlap fraction ``area(region ∩ cell) / area(cell)`` with every grid cell
+    it intersects and returns those rows so the region is represented.
+
+    Operates on true geometry, so a region is assigned even to a cell that a land-sea
+    mask excluded from sampling. Returns a DataFrame with columns
+    ``lat, lon, region_id, percent_overlap`` (empty if no regions are missing).
+    """
+    lats = coordinates['lat']
+    lons = coordinates['lon']
+    coordinate_origin = coordinates['coordinate_origin']
+
+    # Number of cells per axis, mirroring generate_point_distribution.
+    if coordinate_origin == "centered":
+        n_lat, n_lon = len(lats), len(lons)
+    else:  # top-left
+        n_lat, n_lon = len(lats) - 1, len(lons) - 1
+
+    present = set(grouped["region_id"].unique())
+    missing = regions[~regions["region_id"].isin(present)]
+    if missing.empty:
+        return pd.DataFrame(columns=["lat", "lon", "region_id", "percent_overlap"])
+
+    # Union multi-row / multipart regions into a single geometry per region_id.
+    missing = missing.dissolve(by="region_id").reset_index()
+
+    # Precompute the lower/upper edge of every cell along each axis (in ascending order
+    # of the edges, regardless of whether lats/lons ascend or descend).
+    lat_lo = np.array([cell_bounds(i, 0, coordinates)[1] for i in range(n_lat)])
+    lat_hi = np.array([cell_bounds(i, 0, coordinates)[3] for i in range(n_lat)])
+    lon_lo = np.array([cell_bounds(0, j, coordinates)[0] for j in range(n_lon)])
+    lon_hi = np.array([cell_bounds(0, j, coordinates)[2] for j in range(n_lon)])
+
+    rows = []
+    for _, region in missing.iterrows():
+        geom = region["geometry"]
+        region_id = region["region_id"]
+        if geom is None or geom.is_empty:
+            continue
+        minx, miny, maxx, maxy = geom.bounds
+
+        # Candidate cells are those whose extent overlaps the region bounding box.
+        cand_i = np.where((lat_hi >= miny) & (lat_lo <= maxy))[0]
+        cand_j = np.where((lon_hi >= minx) & (lon_lo <= maxx))[0]
+
+        region_rows = []
+        for i in cand_i:
+            for j in cand_j:
+                lo_x, lo_y, hi_x, hi_y = cell_bounds(i, j, coordinates)
+                cell = box(lo_x, lo_y, hi_x, hi_y)
+                if not geom.intersects(cell):
+                    continue
+                inter_area = geom.intersection(cell).area
+                if inter_area <= 0:
+                    continue
+                percent = inter_area / cell.area
+                region_rows.append({
+                    "lat": round(lats[i], 3),
+                    "lon": round(lons[j], 3),
+                    "region_id": region_id,
+                    "percent_overlap": round(percent, 6),
+                })
+
+        if not region_rows:
+            continue
+
+        # Guarantee the region carries at least one strictly positive weight, even if
+        # every overlap rounded to 0.0 (otherwise downstream mean/std hit a
+        # ZeroDivisionError and the region becomes NaN).
+        if all(r["percent_overlap"] <= 0 for r in region_rows):
+            dominant = max(region_rows, key=lambda r: r["percent_overlap"])
+            dominant["percent_overlap"] = 1e-6
+        rows.extend(region_rows)
+
+    return pd.DataFrame(rows, columns=["lat", "lon", "region_id", "percent_overlap"])
+
 def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell, \
                     simplify, mask_nc_path, shapefile_layer, \
                     point_distribution, backend, n_jobs, \
@@ -269,7 +372,7 @@ def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell, \
     regions = load_regions(shapefile_path, simplify=simplify, shapefile_layer=shapefile_layer, yes=yes, default_gid=default_gid)
 
     # Generate points for each grid cell
-    print(f"Generating {point_distribution}-distributed points for all {len(coordinates['lat'])-1}×{len(coordinates['lon'])-1} grid cells...")
+    print(f"Generating {point_distribution}-distributed points for grid cells...")
     point_gdf, cell_coords = generate_point_distribution(mask, coordinates, points_per_cell, point_distribution)
 
     # Estiamte overlaps with regions
@@ -291,6 +394,15 @@ def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell, \
         })
 
     df = pd.DataFrame(rows)
+
+    # Rescue regions that no sample point fell into (typically very small regions) by
+    # computing their exact geometric overlap with the grid.
+    print("Checking for regions with no sampled overlap...")
+    missing_rows = assign_missing_regions(grouped, regions, coordinates)
+    if not missing_rows.empty:
+        print(f"Rescued {missing_rows['region_id'].nunique()} region(s) with no sampled points via exact overlap.")
+        df = pd.concat([df, missing_rows], ignore_index=True)
+
     df.to_csv(output_csv, index=False)
     print(f"Done. Results saved to {output_csv}")         
 
