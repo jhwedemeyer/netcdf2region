@@ -25,6 +25,7 @@ def load_netcdf(
         var,
         time_var=None,
         require_time=True,
+        allow_nan=False,
     ):
     """ Load NetCDF file and extract variable, lat, lon, and optional time. """
     # Load NetCDF dataset
@@ -93,6 +94,11 @@ def load_netcdf(
         data_var = data_var.transpose(ds_vars["time"], ds_vars["lat"], ds_vars["lon"])
         time_values = ds[ds_vars["time"]].values if ds_vars["time"] in ds.variables else None
 
+    if np.isnan(data_var.values).any():
+        if not allow_nan:
+            raise ValueError(f"Variable '{var}' in file '{netcdf_path}' contains NaN values. This may affect the aggregation results. Add --allow_nan to proceed anyway.")
+        print(f"Warning: Variable '{var}' in file '{netcdf_path}' contains NaN values. Affected regions will aggregate to NaN.")
+
     return (
         data_var.values,
         ds[ds_vars["lat"]].values,
@@ -154,16 +160,6 @@ def validate_secondary_weights(
             "(lat, lon) or (time=1, lat, lon)."
         )
 
-    if np.isnan(secondary_data).any():
-        print(f"Warning: Secondary weights variable '{secondary_weights_var}' contains NaN values. Setting them to 1.0.")
-        secondary_data = np.nan_to_num(secondary_data, nan=1.0)
-
-    # Must be returned: assigning to the local above left the caller's array
-    # untouched, so the NaNs propagated into the weights and every affected
-    # region aggregated to NaN.
-    return secondary_data
-
-
 def aggregate(
     netcdf,
     weights,
@@ -174,6 +170,7 @@ def aggregate(
     time_var_name=None,
     secondary_weights_var=None,
     secondary_weights_netcdf=None,
+    allow_nan=False,
 ):
     """ Aggregate gridded NetCDF data to regions using weights. """
 
@@ -190,6 +187,7 @@ def aggregate(
         var,
         time_var=time_var_name,
         require_time=True,
+        allow_nan=allow_nan,
     )
 
     # If secondary weights are provided, load and validate them
@@ -200,9 +198,10 @@ def aggregate(
             secondary_weights_var,
             time_var=None,
             require_time=False,
+            allow_nan=allow_nan,
         )
 
-        secondary_data = validate_secondary_weights(
+        validate_secondary_weights(
             lats=lats,
             lons=lons,
             secondary_data=secondary_data,
@@ -247,9 +246,12 @@ def aggregate(
                 f"computed for this exact grid. Check it with: "
                 f"validate_weights <weights.csv> --netcdf <file.nc>"
             ) from None
+        
         # Force float: an all-integer weights column would otherwise truncate the
         # secondary-weight multiplication below.
         weights_arr = np.array(cell_weights, dtype=float)
+
+        # If secondary weights are provided, multiply the region weights by the secondary weights
         if secondary_weights_data is not None:
             secondary_region = secondary_weights_data[lat_indices, lon_indices][:, None]
             weights_arr[:, None] = weights_arr[:, None] * secondary_region
@@ -323,6 +325,14 @@ def main():
             "Required when --secondary_weights_var is provided."
         ),
     )
+    parser.add_argument(
+        "--allow_nan",
+        action="store_true",
+        help=(
+            "Proceed even if the NetCDF variable contains NaN values. "
+            "Regions covering a NaN grid cell will aggregate to NaN."
+        ),
+    )
     args = parser.parse_args()
 
     if args.secondary_weights_netcdf and not args.secondary_weights_var:
@@ -346,6 +356,7 @@ def main():
         time_var_name=args.time_var,
         secondary_weights_var=args.secondary_weights_var,
         secondary_weights_netcdf=args.secondary_weights_netcdf,
+        allow_nan=args.allow_nan,
     )
 
 if __name__ == "__main__":

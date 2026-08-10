@@ -86,7 +86,10 @@ def test_load_netcdf_transposes_to_time_lat_lon(tmp_path):
 
 
 def test_load_netcdf_allows_a_spatial_only_variable(mini_pop_nc):
-    values, _, _, times = load_netcdf(mini_pop_nc, "pop", require_time=False)
+    # mini_pop holds NaN cells, so loading it at all needs the opt-out.
+    values, _, _, times = load_netcdf(
+        mini_pop_nc, "pop", require_time=False, allow_nan=True
+    )
 
     assert values.shape == (len(MINI_LATS), len(MINI_LONS))
     assert times is None
@@ -94,7 +97,22 @@ def test_load_netcdf_allows_a_spatial_only_variable(mini_pop_nc):
 
 def test_load_netcdf_rejects_a_spatial_only_variable_when_time_is_required(mini_pop_nc):
     with pytest.raises(ValueError, match="has no time dimension"):
-        load_netcdf(mini_pop_nc, "pop", require_time=True)
+        load_netcdf(mini_pop_nc, "pop", require_time=True, allow_nan=True)
+
+
+def test_load_netcdf_rejects_nan_values_by_default(mini_pop_nc):
+    """NaNs silently corrupt every region that touches them, so refuse by default."""
+    with pytest.raises(ValueError, match="contains NaN values"):
+        load_netcdf(mini_pop_nc, "pop", require_time=False)
+
+
+def test_load_netcdf_keeps_nan_values_when_allowed(mini_pop_nc):
+    values, _, _, _ = load_netcdf(
+        mini_pop_nc, "pop", require_time=False, allow_nan=True
+    )
+
+    # The opt-out is not a repair: the NaNs are handed back untouched.
+    assert np.isnan(values).sum() == 2
 
 
 def test_load_netcdf_rejects_an_unknown_variable(mini_tas_nc):
@@ -369,38 +387,52 @@ def test_secondary_weights_pull_the_mean_towards_the_populated_cell(tmp_path, mi
     assert df.iloc[0]["tas"] > 3.9  # dominated by cell (0, 4), whose value is 4
 
 
-def test_nan_secondary_weights_do_not_poison_the_result(tmp_path, mini_tas_nc, mini_pop_nc):
-    """NaN cells are documented as being replaced by 1.0; the result must be finite.
-
-    The replacement previously assigned to a local inside the validator, so the
-    NaNs survived and every affected region aggregated to NaN.
-    """
-    weights = _weights_file(tmp_path, [
+def _nan_secondary_weights_file(tmp_path):
+    """Two single-cell regions: one over a NaN cell of mini_pop, one over a clean cell."""
+    return _weights_file(tmp_path, [
         (MINI_LATS[0], MINI_LONS[0], "HasNaN", 1.0),
         (MINI_LATS[1], MINI_LONS[1], "Clean", 1.0),
     ])
 
+
+def test_nan_secondary_weights_are_rejected_by_default(tmp_path, mini_tas_nc, mini_pop_nc):
+    """NaN weights are no longer patched to 1.0; the run stops instead."""
+    weights = _nan_secondary_weights_file(tmp_path)
+
+    with pytest.raises(ValueError, match="contains NaN values"):
+        _aggregate(
+            tmp_path, mini_tas_nc, weights,
+            secondary_weights_var="pop", secondary_weights_netcdf=mini_pop_nc,
+        )
+
+
+def test_nan_secondary_weights_propagate_when_allowed(tmp_path, mini_tas_nc, mini_pop_nc):
+    """With the opt-out, only the regions touching a NaN weight go NaN."""
+    weights = _nan_secondary_weights_file(tmp_path)
+
     df = _aggregate(
         tmp_path, mini_tas_nc, weights,
         secondary_weights_var="pop", secondary_weights_netcdf=mini_pop_nc,
+        allow_nan=True,
     )
 
-    assert df["tas"].notna().all(), "NaN secondary weights leaked into the output"
-    nan_region = df[df["region_id"] == "HasNaN"]
-    assert list(nan_region["tas"]) == [_value(t, 0, 0) for t in range(3)]
+    assert df[df["region_id"] == "HasNaN"]["tas"].isna().all()
+    clean_region = df[df["region_id"] == "Clean"]
+    assert list(clean_region["tas"]) == [_value(t, 1, 1) for t in range(3)]
 
 
-def test_validate_secondary_weights_returns_the_cleaned_array():
+def test_validate_secondary_weights_does_not_alter_the_array():
+    """The validator only checks; NaN handling is load_netcdf's decision now."""
     data = np.array([[1.0, np.nan], [3.0, 4.0]])
 
-    cleaned = validate_secondary_weights(
+    returned = validate_secondary_weights(
         lats=np.array([0.0, 1.0]), lons=np.array([0.0, 1.0]),
         secondary_data=data, secondary_lats=np.array([0.0, 1.0]),
         secondary_lons=np.array([0.0, 1.0]), secondary_weights_var="pop",
     )
 
-    assert not np.isnan(cleaned).any()
-    assert cleaned[0, 1] == 1.0
+    assert returned is None
+    assert np.isnan(data[0, 1])
 
 
 def test_secondary_weights_on_a_different_grid_are_rejected(tmp_path, mini_tas_nc):

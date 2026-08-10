@@ -63,7 +63,8 @@ netcdf2region \
     [--correct_weights] \
     [--time_var <time_variable>] \
     [--secondary_weights_var <secondary_weight_variable>] \
-    [--secondary_weights_netcdf <secondary_weights.nc>]
+    [--secondary_weights_netcdf <secondary_weights.nc>] \
+    [--allow_nan]
 ```
 
 #### Arguments
@@ -76,8 +77,9 @@ netcdf2region \
 - `--var`: Name of the variable in the NetCDF file to aggregate.
 - `--correct_weights`: (Optional) If set, corrects weights to ensure no values are attributed to the sea.
 - `--time_var`: (Optional) Name of the time variable in the NetCDF file (if not automatically detected).
-- `--secondary_weights_var`: (Optional) Name of a secondary weight variable in the secondary NetCDF file. Must have dimensions `(lat, lon)`. Values are multiplied with `percent_overlap` from the weights CSV during aggregation. NaNs are set to 1.
+- `--secondary_weights_var`: (Optional) Name of a secondary weight variable in the secondary NetCDF file. Must have dimensions `(lat, lon)`. Values are multiplied with `percent_overlap` from the weights CSV during aggregation.
 - `--secondary_weights_netcdf`: Path to the NetCDF file containing `--secondary_weights_var`. Required when `--secondary_weights_var` is provided.
+- `--allow_nan`: (Optional) By default the command aborts if the aggregated variable (or the secondary weight variable) contains NaN values, since these silently corrupt the regional results. Set this flag to proceed anyway: a warning is printed instead, and every region that overlaps a NaN grid cell aggregates to NaN.
 
 See the command-line help (`--help`) for more options and details.
 
