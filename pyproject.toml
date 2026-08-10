@@ -25,6 +25,7 @@ readme = "README.md"
 [project.scripts]
 compute_grid_weights = "netcdf2region.compute_grid_weights:main"
 netcdf2region = "netcdf2region.netcdf2region:main"
+validate_weights = "netcdf2region.validate_weights:main"
 
 [tool.setuptools.package-data]
 "netcdf2region" = ["data/*.csv"]
