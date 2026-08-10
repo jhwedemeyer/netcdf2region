@@ -146,6 +146,64 @@ def test_load_netcdf_cannot_guess_between_two_non_spatial_dims(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# load_netcdf - longitude shifting
+# --------------------------------------------------------------------------- #
+
+def test_load_netcdf_rejects_zero_to_360_longitudes_without_the_flag(tmp_path):
+    """Weights are written in [-180, 180]; the error must name the flag."""
+    path = make_grid_nc(tmp_path / "g.nc", lons=np.arange(0.5, 360.0, 1.0), n_time=1)
+
+    with pytest.raises(ValueError, match="shift_longitudes"):
+        load_netcdf(path, "tas")
+
+
+def test_load_netcdf_shifts_zero_to_360_longitudes_with_the_flag(tmp_path):
+    path = make_grid_nc(tmp_path / "g.nc", lons=np.arange(0.5, 360.0, 1.0), n_time=1)
+
+    _, _, lons, _ = load_netcdf(path, "tas", shift_longitudes=True)
+
+    assert lons.min() == -179.5 and lons.max() == 179.5
+    assert np.all(np.diff(lons) > 0), "shifted longitudes must stay sorted"
+
+
+def test_load_netcdf_reorders_the_data_with_the_longitudes(tmp_path):
+    """Values must follow their own longitude, not stay at their old column."""
+    lons = np.arange(0.5, 360.0, 1.0)
+    path = make_grid_nc(
+        tmp_path / "g.nc", lons=lons, lats=[0.5],
+        values=lons.reshape(1, 1, len(lons)), n_time=1,
+    )
+
+    values, _, shifted, _ = load_netcdf(path, "tas", shift_longitudes=True)
+
+    # Each cell held its own original longitude, so after the shift every value
+    # must equal its new coordinate mapped back into [0, 360].
+    assert np.array_equal(values[0, 0, :], shifted % 360)
+
+
+def test_load_netcdf_rejects_longitudes_outside_both_conventions(tmp_path):
+    path = make_grid_nc(tmp_path / "g.nc", lons=np.arange(400.0, 408.0, 1.0), n_time=1)
+
+    with pytest.raises(ValueError, match="not in EPSG:4326 range"):
+        load_netcdf(path, "tas", shift_longitudes=True)
+
+
+def test_aggregate_accepts_a_360_grid_when_shifting(tmp_path):
+    """A weights file in [-180, 180] must aggregate a [0, 360] NetCDF once shifted."""
+    lons = np.arange(0.5, 360.0, 1.0)
+    values = np.tile(lons, (2, len(MINI_LATS), 1))
+    path = make_grid_nc(
+        tmp_path / "g.nc", lons=lons, values=values, n_time=2,
+    )
+    # -179.5 in the weights is longitude 180.5 of the source grid.
+    weights = _weights_file(tmp_path, [(0.5, -179.5, "R", 1.0)])
+
+    out = _aggregate(tmp_path, path, weights, shift_longitudes=True)
+
+    assert list(out["tas"]) == [180.5, 180.5]
+
+
+# --------------------------------------------------------------------------- #
 # correct_weights
 # --------------------------------------------------------------------------- #
 
@@ -325,24 +383,25 @@ def test_correct_weights_flag_changes_the_result(tmp_path, mini_tas_nc):
 def test_weights_off_the_grid_give_an_actionable_error(tmp_path, mini_tas_nc):
     """Using the wrong weights file for a grid is the most likely user error.
 
-    It used to surface as a bare IndexError from deep inside the loop.
+    It used to surface as a bare IndexError from deep inside the loop; the grid
+    check in ``aggregate`` now reports it before any region is touched.
     """
     weights = _weights_file(tmp_path, [(99.5, 0.5, "R", 1.0)])
 
-    with pytest.raises(ValueError, match="do not exist in"):
+    with pytest.raises(ValueError, match="Latitude values in weights file do not match"):
         _aggregate(tmp_path, mini_tas_nc, weights)
 
 
-def test_the_error_names_the_offending_region_and_cell(tmp_path, mini_tas_nc):
+def test_a_longitude_off_the_grid_points_at_the_convention(tmp_path, mini_tas_nc):
+    """The [-180, 180] vs [0, 360] mix-up is the usual cause, so it is named."""
     weights = _weights_file(tmp_path, [(0.5, 0.5, "Good", 1.0), (0.5, 12.5, "Bad", 1.0)])
 
     with pytest.raises(ValueError) as excinfo:
         _aggregate(tmp_path, mini_tas_nc, weights)
 
     message = str(excinfo.value)
-    assert "Bad" in message
-    assert "12.5" in message
-    assert "validate_weights" in message
+    assert "Longitude values in weights file do not match" in message
+    assert "0 to 360" in message
 
 
 # --------------------------------------------------------------------------- #

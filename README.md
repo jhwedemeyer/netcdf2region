@@ -64,7 +64,8 @@ netcdf2region \
     [--time_var <time_variable>] \
     [--secondary_weights_var <secondary_weight_variable>] \
     [--secondary_weights_netcdf <secondary_weights.nc>] \
-    [--allow_nan]
+    [--allow_nan] \
+    [--shift_longitudes]
 ```
 
 #### Arguments
@@ -80,6 +81,7 @@ netcdf2region \
 - `--secondary_weights_var`: (Optional) Name of a secondary weight variable in the secondary NetCDF file. Must have dimensions `(lat, lon)`. Values are multiplied with `percent_overlap` from the weights CSV during aggregation.
 - `--secondary_weights_netcdf`: Path to the NetCDF file containing `--secondary_weights_var`. Required when `--secondary_weights_var` is provided.
 - `--allow_nan`: (Optional) By default the command aborts if the aggregated variable (or the secondary weight variable) contains NaN values, since these silently corrupt the regional results. Set this flag to proceed anyway: a warning is printed instead, and every region that overlaps a NaN grid cell aggregates to NaN.
+- `--shift_longitudes`: (Optional) Shift the input longitudes from `[0, 360]` to `[-180, 180]` and reorder the data accordingly. Weights files are always written in `[-180, 180]`, so a NetCDF on a `[0, 360]` grid (e.g. raw ERA5) needs this flag; without it the command aborts. Same meaning as in `compute_grid_weights`.
 
 See the command-line help (`--help`) for more options and details.
 
