@@ -1,0 +1,62 @@
+{
+  "ERA5_to_DOSE_admin1_weights.csv": {
+    "max_cell_sum": 2.0,
+    "max_weight": 1.0,
+    "min_weight": 0.01,
+    "n_cells": 262430,
+    "n_cells_over_one": 13689,
+    "n_regions": 3391,
+    "n_rescued_rows": 0,
+    "n_rows": 326584
+  },
+  "ERA5_to_GADM36_admin0_weights.csv": {
+    "max_cell_sum": 1.0,
+    "max_weight": 1.0,
+    "min_weight": 0.01,
+    "n_cells": 362055,
+    "n_cells_over_one": 0,
+    "n_regions": 251,
+    "n_rescued_rows": 0,
+    "n_rows": 372057
+  },
+  "ERA5_to_GADM36_admin1_weights.csv": {
+    "max_cell_sum": 1.02,
+    "max_weight": 1.0,
+    "min_weight": 0.01,
+    "n_cells": 262439,
+    "n_cells_over_one": 1,
+    "n_regions": 3556,
+    "n_rescued_rows": 0,
+    "n_rows": 310866
+  },
+  "ISIMIP_to_DOSE_admin1_weights.csv": {
+    "max_cell_sum": 2.0,
+    "max_weight": 1.0,
+    "min_weight": 0.01,
+    "n_cells": 68324,
+    "n_cells_over_one": 3437,
+    "n_regions": 3306,
+    "n_rescued_rows": 0,
+    "n_rows": 96011
+  },
+  "ISIMIP_to_GADM36_admin0_weights.csv": {
+    "max_cell_sum": 1.0,
+    "max_weight": 1.0,
+    "min_weight": 0.01,
+    "n_cells": 93198,
+    "n_cells_over_one": 0,
+    "n_regions": 248,
+    "n_rescued_rows": 0,
+    "n_rows": 97826
+  },
+  "ISIMIP_to_GADM36_admin1_weights.csv": {
+    "max_cell_sum": 1.0000000000000002,
+    "max_weight": 1.0,
+    "min_weight": 0.01,
+    "n_cells": 68325,
+    "n_cells_over_one": 0,
+    "n_regions": 3464,
+    "n_rescued_rows": 0,
+    "n_rows": 91870
+  }
+}
