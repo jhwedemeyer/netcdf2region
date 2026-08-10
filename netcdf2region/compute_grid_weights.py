@@ -118,7 +118,10 @@ def load_land_sea_mask(mask_nc_path, coordinates, yes=False):
         raise ValueError(f"Mask shape {mask.shape} does not match grid shape {(len(lats), len(lons))}")
     mask_lats = mask_ds['lat'].values if 'lat' in mask_ds else mask_ds['latitude'].values
     mask_lons = mask_ds['lon'].values if 'lon' in mask_ds else mask_ds['longitude'].values
-    if mask_lats.min() != lats.min() and mask_lats.max() != lats.max() and mask_lons.min() != lons.min() and mask_lons.max() != lons.max():
+    # Any single mismatched edge means the mask describes a different grid, so
+    # these must be combined with `or`: with `and` the check only fired when all
+    # four edges differed, silently accepting masks that overlapped on one side.
+    if mask_lats.min() != lats.min() or mask_lats.max() != lats.max() or mask_lons.min() != lons.min() or mask_lons.max() != lons.max():
         raise ValueError("Mask lat/lon values must match grid lat/lon values exactly. Please check your mask NetCDF file.")
     
     # Expand mask so that all neighboring cells (including diagonals) of mask==1 are also set to 1 (fast numpy version)

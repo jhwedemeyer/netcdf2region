@@ -8,11 +8,17 @@ from tqdm import tqdm
 
 def precalc_weights_path(name: str):
     """ Get the path to a precalculated weights file from the package data. """
-    try:
-        path = files("netcdf2region.data").joinpath(name)
-        return path
-    except FileNotFoundError:
-        raise ValueError(f"Precalculated weights file '{name}' not found in package data.")
+    data = files("netcdf2region.data")
+    path = data.joinpath(name)
+    # joinpath() never raises for a missing name, so check explicitly rather than
+    # letting the failure surface much later as a confusing read_csv error.
+    if not path.is_file():
+        available = sorted(p.name for p in data.iterdir() if p.name.endswith(".csv"))
+        raise ValueError(
+            f"Precalculated weights file '{name}' not found in package data. "
+            f"Available: {available}"
+        )
+    return path
 
 def load_netcdf(
         netcdf_path,
@@ -152,6 +158,11 @@ def validate_secondary_weights(
         print(f"Warning: Secondary weights variable '{secondary_weights_var}' contains NaN values. Setting them to 1.0.")
         secondary_data = np.nan_to_num(secondary_data, nan=1.0)
 
+    # Must be returned: assigning to the local above left the caller's array
+    # untouched, so the NaNs propagated into the weights and every affected
+    # region aggregated to NaN.
+    return secondary_data
+
 
 def aggregate(
     netcdf,
@@ -191,7 +202,7 @@ def aggregate(
             require_time=False,
         )
 
-        validate_secondary_weights(
+        secondary_data = validate_secondary_weights(
             lats=lats,
             lons=lons,
             secondary_data=secondary_data,
@@ -219,10 +230,26 @@ def aggregate(
         mask = list(zip(region_weights['lat'], region_weights['lon']))
         cell_weights = region_weights['percent_overlap'].tolist()
 
-        # Prepare arrays for indices and weights
-        lat_indices = np.array([np.where(lats == lat)[0][0] for lat, _ in mask])
-        lon_indices = np.array([np.where(lons == lon)[0][0] for _, lon in mask])
-        weights_arr = np.array(cell_weights)
+        # Prepare arrays for indices and weights. Coordinates are matched by exact
+        # equality, so a weights file built for a different grid fails here; report
+        # which cell is at fault instead of an unexplained IndexError.
+        try:
+            lat_indices = np.array([np.where(lats == lat)[0][0] for lat, _ in mask])
+            lon_indices = np.array([np.where(lons == lon)[0][0] for _, lon in mask])
+        except IndexError:
+            unmatched = [
+                (lat, lon) for lat, lon in mask
+                if not len(np.where(lats == lat)[0]) or not len(np.where(lons == lon)[0])
+            ]
+            raise ValueError(
+                f"Region '{region_id}' references grid cell(s) that do not exist in "
+                f"'{netcdf}', e.g. {unmatched[:3]}. The weights file must have been "
+                f"computed for this exact grid. Check it with: "
+                f"validate_weights <weights.csv> --netcdf <file.nc>"
+            ) from None
+        # Force float: an all-integer weights column would otherwise truncate the
+        # secondary-weight multiplication below.
+        weights_arr = np.array(cell_weights, dtype=float)
         if secondary_weights_data is not None:
             secondary_region = secondary_weights_data[lat_indices, lon_indices][:, None]
             weights_arr[:, None] = weights_arr[:, None] * secondary_region
