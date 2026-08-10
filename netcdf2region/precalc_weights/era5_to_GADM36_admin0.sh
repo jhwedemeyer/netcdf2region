@@ -23,6 +23,7 @@ else
     PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 COMPUTE_GRID_WEIGHTS="$PACKAGE_DIR/compute_grid_weights.py"
+VALIDATE_GRID_WEIGHTS="$PACKAGE_DIR/validate_weights.py"
 
 if [ ! -f "$COMPUTE_GRID_WEIGHTS" ]; then
     echo "compute_grid_weights.py not found at $COMPUTE_GRID_WEIGHTS" >&2
@@ -53,7 +54,7 @@ fi
 # reported, since overlapping source polygons make them legitimate.
 # Use the local package copy, matching the compute step above.
 export PYTHONPATH="$(dirname "$PACKAGE_DIR")${PYTHONPATH:+:$PYTHONPATH}"
-python -m netcdf2region.validate_weights "$WEIGHTS_OUTPUT" \
+python "$VALIDATE_GRID_WEIGHTS" "$WEIGHTS_OUTPUT" \
     --netcdf "$NETCDF_GRID" \
     --shapefile "$SHAPEFILE" \
     --shapefile_layer=$SHAPEFILE_LAYER \

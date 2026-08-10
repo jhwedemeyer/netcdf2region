@@ -86,7 +86,10 @@ def test_load_netcdf_transposes_to_time_lat_lon(tmp_path):
 
 
 def test_load_netcdf_allows_a_spatial_only_variable(mini_pop_nc):
-    values, _, _, times = load_netcdf(mini_pop_nc, "pop", require_time=False)
+    # mini_pop holds NaN cells, so loading it at all needs the opt-out.
+    values, _, _, times = load_netcdf(
+        mini_pop_nc, "pop", require_time=False, allow_nan=True
+    )
 
     assert values.shape == (len(MINI_LATS), len(MINI_LONS))
     assert times is None
@@ -94,7 +97,22 @@ def test_load_netcdf_allows_a_spatial_only_variable(mini_pop_nc):
 
 def test_load_netcdf_rejects_a_spatial_only_variable_when_time_is_required(mini_pop_nc):
     with pytest.raises(ValueError, match="has no time dimension"):
-        load_netcdf(mini_pop_nc, "pop", require_time=True)
+        load_netcdf(mini_pop_nc, "pop", require_time=True, allow_nan=True)
+
+
+def test_load_netcdf_rejects_nan_values_by_default(mini_pop_nc):
+    """NaNs silently corrupt every region that touches them, so refuse by default."""
+    with pytest.raises(ValueError, match="contains NaN values"):
+        load_netcdf(mini_pop_nc, "pop", require_time=False)
+
+
+def test_load_netcdf_keeps_nan_values_when_allowed(mini_pop_nc):
+    values, _, _, _ = load_netcdf(
+        mini_pop_nc, "pop", require_time=False, allow_nan=True
+    )
+
+    # The opt-out is not a repair: the NaNs are handed back untouched.
+    assert np.isnan(values).sum() == 2
 
 
 def test_load_netcdf_rejects_an_unknown_variable(mini_tas_nc):
@@ -125,6 +143,64 @@ def test_load_netcdf_cannot_guess_between_two_non_spatial_dims(tmp_path):
 
     with pytest.raises(ValueError, match="time_var"):
         load_netcdf(path, "tas")
+
+
+# --------------------------------------------------------------------------- #
+# load_netcdf - longitude shifting
+# --------------------------------------------------------------------------- #
+
+def test_load_netcdf_rejects_zero_to_360_longitudes_without_the_flag(tmp_path):
+    """Weights are written in [-180, 180]; the error must name the flag."""
+    path = make_grid_nc(tmp_path / "g.nc", lons=np.arange(0.5, 360.0, 1.0), n_time=1)
+
+    with pytest.raises(ValueError, match="shift_longitudes"):
+        load_netcdf(path, "tas")
+
+
+def test_load_netcdf_shifts_zero_to_360_longitudes_with_the_flag(tmp_path):
+    path = make_grid_nc(tmp_path / "g.nc", lons=np.arange(0.5, 360.0, 1.0), n_time=1)
+
+    _, _, lons, _ = load_netcdf(path, "tas", shift_longitudes=True)
+
+    assert lons.min() == -179.5 and lons.max() == 179.5
+    assert np.all(np.diff(lons) > 0), "shifted longitudes must stay sorted"
+
+
+def test_load_netcdf_reorders_the_data_with_the_longitudes(tmp_path):
+    """Values must follow their own longitude, not stay at their old column."""
+    lons = np.arange(0.5, 360.0, 1.0)
+    path = make_grid_nc(
+        tmp_path / "g.nc", lons=lons, lats=[0.5],
+        values=lons.reshape(1, 1, len(lons)), n_time=1,
+    )
+
+    values, _, shifted, _ = load_netcdf(path, "tas", shift_longitudes=True)
+
+    # Each cell held its own original longitude, so after the shift every value
+    # must equal its new coordinate mapped back into [0, 360].
+    assert np.array_equal(values[0, 0, :], shifted % 360)
+
+
+def test_load_netcdf_rejects_longitudes_outside_both_conventions(tmp_path):
+    path = make_grid_nc(tmp_path / "g.nc", lons=np.arange(400.0, 408.0, 1.0), n_time=1)
+
+    with pytest.raises(ValueError, match="not in EPSG:4326 range"):
+        load_netcdf(path, "tas", shift_longitudes=True)
+
+
+def test_aggregate_accepts_a_360_grid_when_shifting(tmp_path):
+    """A weights file in [-180, 180] must aggregate a [0, 360] NetCDF once shifted."""
+    lons = np.arange(0.5, 360.0, 1.0)
+    values = np.tile(lons, (2, len(MINI_LATS), 1))
+    path = make_grid_nc(
+        tmp_path / "g.nc", lons=lons, values=values, n_time=2,
+    )
+    # -179.5 in the weights is longitude 180.5 of the source grid.
+    weights = _weights_file(tmp_path, [(0.5, -179.5, "R", 1.0)])
+
+    out = _aggregate(tmp_path, path, weights, shift_longitudes=True)
+
+    assert list(out["tas"]) == [180.5, 180.5]
 
 
 # --------------------------------------------------------------------------- #
@@ -307,24 +383,25 @@ def test_correct_weights_flag_changes_the_result(tmp_path, mini_tas_nc):
 def test_weights_off_the_grid_give_an_actionable_error(tmp_path, mini_tas_nc):
     """Using the wrong weights file for a grid is the most likely user error.
 
-    It used to surface as a bare IndexError from deep inside the loop.
+    It used to surface as a bare IndexError from deep inside the loop; the grid
+    check in ``aggregate`` now reports it before any region is touched.
     """
     weights = _weights_file(tmp_path, [(99.5, 0.5, "R", 1.0)])
 
-    with pytest.raises(ValueError, match="do not exist in"):
+    with pytest.raises(ValueError, match="Latitude values in weights file do not match"):
         _aggregate(tmp_path, mini_tas_nc, weights)
 
 
-def test_the_error_names_the_offending_region_and_cell(tmp_path, mini_tas_nc):
+def test_a_longitude_off_the_grid_points_at_the_convention(tmp_path, mini_tas_nc):
+    """The [-180, 180] vs [0, 360] mix-up is the usual cause, so it is named."""
     weights = _weights_file(tmp_path, [(0.5, 0.5, "Good", 1.0), (0.5, 12.5, "Bad", 1.0)])
 
     with pytest.raises(ValueError) as excinfo:
         _aggregate(tmp_path, mini_tas_nc, weights)
 
     message = str(excinfo.value)
-    assert "Bad" in message
-    assert "12.5" in message
-    assert "validate_weights" in message
+    assert "Longitude values in weights file do not match" in message
+    assert "0 to 360" in message
 
 
 # --------------------------------------------------------------------------- #
@@ -369,38 +446,52 @@ def test_secondary_weights_pull_the_mean_towards_the_populated_cell(tmp_path, mi
     assert df.iloc[0]["tas"] > 3.9  # dominated by cell (0, 4), whose value is 4
 
 
-def test_nan_secondary_weights_do_not_poison_the_result(tmp_path, mini_tas_nc, mini_pop_nc):
-    """NaN cells are documented as being replaced by 1.0; the result must be finite.
-
-    The replacement previously assigned to a local inside the validator, so the
-    NaNs survived and every affected region aggregated to NaN.
-    """
-    weights = _weights_file(tmp_path, [
+def _nan_secondary_weights_file(tmp_path):
+    """Two single-cell regions: one over a NaN cell of mini_pop, one over a clean cell."""
+    return _weights_file(tmp_path, [
         (MINI_LATS[0], MINI_LONS[0], "HasNaN", 1.0),
         (MINI_LATS[1], MINI_LONS[1], "Clean", 1.0),
     ])
 
+
+def test_nan_secondary_weights_are_rejected_by_default(tmp_path, mini_tas_nc, mini_pop_nc):
+    """NaN weights are no longer patched to 1.0; the run stops instead."""
+    weights = _nan_secondary_weights_file(tmp_path)
+
+    with pytest.raises(ValueError, match="contains NaN values"):
+        _aggregate(
+            tmp_path, mini_tas_nc, weights,
+            secondary_weights_var="pop", secondary_weights_netcdf=mini_pop_nc,
+        )
+
+
+def test_nan_secondary_weights_propagate_when_allowed(tmp_path, mini_tas_nc, mini_pop_nc):
+    """With the opt-out, only the regions touching a NaN weight go NaN."""
+    weights = _nan_secondary_weights_file(tmp_path)
+
     df = _aggregate(
         tmp_path, mini_tas_nc, weights,
         secondary_weights_var="pop", secondary_weights_netcdf=mini_pop_nc,
+        allow_nan=True,
     )
 
-    assert df["tas"].notna().all(), "NaN secondary weights leaked into the output"
-    nan_region = df[df["region_id"] == "HasNaN"]
-    assert list(nan_region["tas"]) == [_value(t, 0, 0) for t in range(3)]
+    assert df[df["region_id"] == "HasNaN"]["tas"].isna().all()
+    clean_region = df[df["region_id"] == "Clean"]
+    assert list(clean_region["tas"]) == [_value(t, 1, 1) for t in range(3)]
 
 
-def test_validate_secondary_weights_returns_the_cleaned_array():
+def test_validate_secondary_weights_does_not_alter_the_array():
+    """The validator only checks; NaN handling is load_netcdf's decision now."""
     data = np.array([[1.0, np.nan], [3.0, 4.0]])
 
-    cleaned = validate_secondary_weights(
+    returned = validate_secondary_weights(
         lats=np.array([0.0, 1.0]), lons=np.array([0.0, 1.0]),
         secondary_data=data, secondary_lats=np.array([0.0, 1.0]),
         secondary_lons=np.array([0.0, 1.0]), secondary_weights_var="pop",
     )
 
-    assert not np.isnan(cleaned).any()
-    assert cleaned[0, 1] == 1.0
+    assert returned is None
+    assert np.isnan(data[0, 1])
 
 
 def test_secondary_weights_on_a_different_grid_are_rejected(tmp_path, mini_tas_nc):
