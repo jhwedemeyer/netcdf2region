@@ -77,6 +77,10 @@ dmypy.json
 # Logs
 *.log
 
+# SLURM job output from precalc_weights/
+netcdf2region/temp/*.out
+netcdf2region/temp/*.err
+
 # MacOS
 .DS_Store
 
