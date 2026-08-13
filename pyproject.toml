@@ -35,6 +35,9 @@ validate_weights = "netcdf2region.validate_weights:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the working tree ahead of any installed netcdf2region, so the suite always
+# tests the code in this checkout rather than a stale copy in site-packages.
+pythonpath = ["."]
 markers = [
     "cluster: needs the PIK /p/projects input data; skipped elsewhere",
     "slow: takes more than a moment (reads the full shipped weights)",

@@ -302,10 +302,12 @@ def test_area_reconstruction_passes_for_correct_weights(mini_weights_csv):
     )
 
     assert report.ok
-    # D and E are sub-pixel; their rescued weights are exact, so only the 1e-6
-    # floor on E can deviate. Everything else must be within tolerance.
-    worst = _check(report, "region_areas").details.get("worst_regions", {})
-    assert set(worst) <= {"E"}
+    # E is a speck kept alive by the 1e-6 floor, which says nothing about its size,
+    # so it must be skipped. Everything else must be within tolerance.
+    check = _check(report, "region_areas")
+    assert check.passed, check.message
+    assert check.details["n_skipped"] == 1
+    assert check.details["n_regions"] == 4
 
 
 def test_badly_scaled_weights_are_flagged_as_an_area_warning():
