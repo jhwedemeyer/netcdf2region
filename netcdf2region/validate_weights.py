@@ -355,11 +355,17 @@ def _cell_area_km2(lat, lat_res, lon_res):
 
 
 def _check_region_areas(df, regions, coordinates, area_rtol):
-    """Check 9: weights reconstruct each region's true area.
+    """Check 9: weights reconstruct each region's true area, where that is testable.
 
     ``sum(weight * cell_area)`` over a region's cells should approach the region's
     own area. Point sampling and 2-decimal rounding make this approximate, so it
     is a warning that reports the worst offenders rather than a hard failure.
+
+    Regions whose area the weights cannot express - above all anything small enough
+    to sit inside a single grid cell - are skipped and reported instead of counted;
+    see ``skip_reasons`` below. Two biases remain invisible here: weights computed
+    with a land-sea mask make coastal regions look too small, and a region stored
+    unsplit across +/-180 has a meaningless bounding box.
     """
     if regions is None or coordinates is None:
         return Check(
@@ -373,42 +379,101 @@ def _check_region_areas(df, regions, coordinates, area_rtol):
     weighted = df.copy()
     weighted["cell_area"] = _cell_area_km2(weighted["lat"].values, lat_res, lon_res)
     weighted["area"] = weighted["percent_overlap"] * weighted["cell_area"]
-    estimated = weighted.groupby("region_id")["area"].sum()
+    # Rescued rows carry 6 decimals, sampled ones 2: the resolution a region's share
+    # of a cell is known to, and with it the smallest area error the file can express.
+    weighted["quantum"] = np.where(
+        weighted["percent_overlap"].round(2) == weighted["percent_overlap"], 0.01, 1e-6
+    )
+    # A cell reaching past the pole is clamped to it, but only the half inside the
+    # globe can catch a sample point, so its region always looks too small.
+    weighted["polar"] = weighted["lat"].abs() + lat_res / 2 > 90.0
+    est = weighted.groupby("region_id").agg(
+        area=("area", "sum"),
+        quantum=("quantum", "max"),
+        cell_area=("cell_area", "mean"),
+        n_cells=("cell_area", "size"),
+        polar=("polar", "any"),
+    )
+    # Smallest area error the file can express for a region: one rounding step of a
+    # cell, over the cells it touches. The steps are independent, so they add in
+    # quadrature - summing them would call every long, thin region unverifiable.
+    est["resolution"] = est["quantum"] * est["cell_area"] * np.sqrt(est["n_cells"])
 
     # Equal-area projection (World Cylindrical Equal Area) for the reference area.
     dissolved = regions.dissolve(by="region_id")
     true_area = dissolved.to_crs("ESRI:54034").geometry.area / 1e6
 
-    common = estimated.index.intersection(true_area.index)
+    common = est.index.intersection(true_area.index)
     if len(common) == 0:
         return Check(
             "region_areas", True, WARNING,
             "skipped (no region ids in common)", {"skipped": True},
         )
 
-    est = estimated.loc[common]
+    est = est.loc[common]
     ref = true_area.loc[common]
-    # Guard against zero-area reference geometries.
-    valid = ref > 0
-    rel_err = ((est[valid] - ref[valid]) / ref[valid]).abs()
+    bounds = dissolved.bounds.loc[common]
 
+    # Regions whose reconstructed area is wrong for reasons that have nothing to do
+    # with the weights. Their deviation is noise, so they are skipped and reported
+    # rather than counted. The first reason wins where several apply.
+    skip_reasons = {
+        "invalid or zero-area geometry":
+            ~dissolved.geometry.loc[common].is_valid.values | ~(ref > 0),
+        "cell clamped at the pole": est["polar"],
+        "extends beyond the template grid":
+            (bounds["miny"] < coordinates["lat"].min() - lat_res / 2)
+            | (bounds["maxy"] > coordinates["lat"].max() + lat_res / 2)
+            | (bounds["minx"] < coordinates["lon"].min() - lon_res / 2)
+            | (bounds["maxx"] > coordinates["lon"].max() + lon_res / 2),
+        # A region small enough to sit inside one cell is described by a weight
+        # rounded to 2 decimals, so its area comes in steps of a whole percent of
+        # that cell: for a region covering a fraction of a percent of it the
+        # deviation is hundreds of percent and measures rounding, not the weights.
+        "below the weight resolution": est["resolution"] > area_rtol * ref,
+    }
+    skipped = pd.Series(None, index=common, dtype=object)
+    for reason, mask in skip_reasons.items():
+        skipped = skipped.mask(skipped.isna() & np.asarray(mask), reason)
+
+    counts = skipped.value_counts()
+    note = ""
+    details = {"n_skipped": int(skipped.notna().sum())}
+    if len(counts):
+        note = (
+            f"; {details['n_skipped']} region(s) skipped as not verifiable ("
+            + ", ".join(f"{n} {reason}" for reason, n in counts.items()) + ")"
+        )
+        details["skipped_by_reason"] = {r: int(n) for r, n in counts.items()}
+
+    keep = skipped.isna()
+    if not keep.any():
+        return Check(
+            "region_areas", True, WARNING,
+            f"skipped (no region's area is verifiable){note}",
+            {"skipped": True, **details},
+        )
+
+    rel_err = ((est["area"][keep] - ref[keep]) / ref[keep]).abs()
     over = rel_err[rel_err > area_rtol]
+    details.update({
+        "n_over": len(over),
+        "n_regions": len(rel_err),
+        "max_rel_err": float(rel_err.max()),
+    })
     if len(over):
+        details["worst_regions"] = _worst_offenders(over)
         return Check(
             "region_areas", False, WARNING,
-            f"{len(over)} of {len(rel_err)} region(s) deviate from their true area by "
-            f"more than {area_rtol:.0%} (worst {rel_err.max():.1%})",
-            {
-                "n_over": len(over),
-                "n_regions": len(rel_err),
-                "max_rel_err": float(rel_err.max()),
-                "worst_regions": _worst_offenders(over),
-            },
+            f"{len(over)} of {len(rel_err)} verifiable region(s) deviate from their "
+            f"true area by more than {area_rtol:.0%} (worst {rel_err.max():.1%}){note}",
+            details,
         )
     return Check(
         "region_areas", True, WARNING,
-        f"all {len(rel_err)} region areas within {area_rtol:.0%} "
-        f"(worst {rel_err.max():.1%})",
+        f"all {len(rel_err)} verifiable region areas within {area_rtol:.0%} "
+        f"(worst {rel_err.max():.1%}){note}",
+        details,
     )
 
 
