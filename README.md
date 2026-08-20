@@ -168,6 +168,12 @@ compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --yes --shapefile_l
 - tqdm
 - netCDF4
 
+## Acknowledgements
+
+This package builds on prior work of Leonie Wenz and Maximilian Kotz, whose approach to aggregating gridded climate data onto administrative regions forms the methodological basis for `netcdf2region`.
+
+Thanks to Anna Reckwitz, Katharina Ziegler, and Maik Hoffmann for early testing and for their help in improving the package.
+
 ## Contributing
 
 Contributions are welcome! Please open issues or pull requests.

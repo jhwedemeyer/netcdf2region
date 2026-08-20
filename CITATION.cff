@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "netcdf2region"
+abstract: "A Python tool for aggregating NetCDF gridded climate data onto arbitrary regions using area-weighted grid weights."
+authors:
+  - family-names: "Wedemeyer"
+    given-names: "Jakob"
+    affiliation: "Potsdam Institute for Climate Impact Research (PIK)"
+    orcid: "https://orcid.org/0000-0002-0657-4350"
+repository-code: "https://github.com/lochner/netcdf2region"
+url: "https://github.com/lochner/netcdf2region"
+license: BSD-3-Clause
+version: "0.1.0"
+date-released: "2026-08-20"
+keywords:
+  - netCDF
+  - climate data
+  - regional aggregation
+  - geospatial
+  - netcdf
