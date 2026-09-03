@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "netcdf2region"
-version = "0.1.8"
+version = "0.1.9"
 description = "Aggregate NetCDF data to regions using spatial weights"
 authors = [{ name = "Jakob Wedemeyer", email = "jakob.wedemeyer@pik-potsdam.de" }]
 dependencies = [
@@ -29,6 +29,9 @@ test = ["pytest>=7", "pytest-cov"]
 compute_grid_weights = "netcdf2region.compute_grid_weights:main"
 netcdf2region = "netcdf2region.netcdf2region:main"
 validate_weights = "netcdf2region.validate_weights:main"
+
+[tool.setuptools.packages.find]
+include = ["netcdf2region*"]
 
 [tool.setuptools.package-data]
 "netcdf2region" = ["data/*.csv"]

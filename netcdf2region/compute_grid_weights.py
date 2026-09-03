@@ -135,15 +135,14 @@ def load_regions(shapefile_path, simplify, shapefile_layer, default_gid, yes=Fal
     regions = gpd.read_file(shapefile_path, layer=shapefile_layer).to_crs("EPSG:4326")
     if default_gid in regions.columns:
         regions = regions.rename(columns={default_gid: 'region_id'})
-    elif 'GID_0' in regions.columns:
-        regions = regions.rename(columns={'GID_0': 'region_id'})
     else:
-        print("Column 'GID_1' not found in shapefile.")
+        print(f"Column {default_gid} not found in shapefile.")
         print(f"Available columns: {list(regions.columns)}")
         if not yes:
             region_col = input("Please enter the column name to use as region identifier: ")
         else:
             region_col = list(regions.columns)[0]
+            print(f"Using first column as region identifier: {region_col}")
         if region_col not in regions.columns:
             raise KeyError(f"Column '{region_col}' not found in shapefile.")
         regions = regions.rename(columns={region_col: 'region_id'})
