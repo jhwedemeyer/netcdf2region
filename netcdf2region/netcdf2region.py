@@ -6,6 +6,13 @@ import xarray as xr
 from importlib.resources import files
 from tqdm import tqdm
 
+#: Weights CSVs store coordinates at 3 decimals, so grid axes are rounded to the same
+#: precision before matching. Without this a 0.1 degree grid (e.g. E-OBS) reads back as
+#: 4.1499999999999995 and never equals the 4.15 in the file. The flip side is that grids
+#: finer than 0.001 degrees cannot be represented: two neighbouring cells would round to
+#: the same coordinate.
+COORD_DECIMALS = 3
+
 def precalc_weights_path(name: str):
     """ Get the path to a precalculated weights file from the package data. """
     data = files("netcdf2region.data")
@@ -115,6 +122,11 @@ def load_netcdf(
         else:
             raise ValueError("Longitude values are not in EPSG:4326 range (-180 to 180 or 0 to 360). You might want to enable longitude shifting with the --shift_longitudes flag if your data uses [0, 360] range.")
 
+    # Put the axes in the same precision the weights files use. This has to come after the
+    # shift above, because the modulo arithmetic there introduces error of its own.
+    lat_values = np.round(lat_values, COORD_DECIMALS)
+    lon_values = np.round(lon_values, COORD_DECIMALS)
+
     if np.isnan(data_var.values).any():
         if not allow_nan:
             raise ValueError(f"Variable '{var}' in file '{netcdf_path}' contains NaN values. This may affect the aggregation results. Add --allow_nan to proceed anyway.")
@@ -174,6 +186,41 @@ def _check_axis_match(name, primary, secondary):
         )
 
 
+def _check_weights_on_grid(weights_df, lats, lons, netcdf):
+    """Raise if the weights file references coordinates the grid does not have.
+
+    Checked once up front rather than inside the region loop: using the wrong weights
+    file for a grid is the most likely user error, and reporting it here says which
+    axis is wrong instead of blaming whichever region happened to come first.
+
+    Both sides are already rounded to COORD_DECIMALS, so a mismatch here is a genuinely
+    different grid rather than a float representation artefact.
+    """
+    for name, column, axis in (("Latitude", "lat", lats), ("Longitude", "lon", lons)):
+        missing = sorted(set(weights_df[column].tolist()) - set(axis.tolist()))
+        if not missing:
+            continue
+
+        # The [-180, 180] vs [0, 360] mix-up is the usual cause of an unmatched
+        # longitude, so name it rather than making the user guess.
+        hint = ""
+        if column == "lon":
+            hint = (
+                "Weights are always written in the -180 to 180 convention; if your data "
+                "uses 0 to 360, re-run with --shift_longitudes. Otherwise the "
+            )
+        else:
+            hint = "The "
+
+        raise ValueError(
+            f"{name} values in weights file do not match the grid in '{netcdf}'. "
+            f"{len(missing)} unmatched value(s), e.g. {missing[:5]}. The NetCDF file has "
+            f"{name.lower()}s {_describe_axis(axis)}. "
+            f"{hint}weights file must have been computed for this exact grid. "
+            f"Check it with: validate_weights <weights.csv> --netcdf <file.nc>"
+        )
+
+
 def validate_secondary_weights(
         lats,
         lons,
@@ -220,6 +267,9 @@ def aggregate(
     # Load weights CSV file (should contain columns: lat, lon, region_id, percent_overlap)
     print(f"Loading weights file: {weights}")
     weights_df = pd.read_csv(weights)
+    # compute_grid_weights already writes 3 decimals, but a hand-edited or externally
+    # produced file may not, and correct_weights below groups on these columns.
+    weights_df[["lat", "lon"]] = weights_df[["lat", "lon"]].round(COORD_DECIMALS)
     if correct_weights_flag:
         weights_df = correct_weights(weights_df)
 
@@ -233,6 +283,8 @@ def aggregate(
         allow_nan=allow_nan,
         shift_longitudes=shift_longitudes,
     )
+
+    _check_weights_on_grid(weights_df, lats, lons, netcdf)
 
     # If secondary weights are provided, load and validate them
     secondary_weights_data = None
@@ -274,24 +326,10 @@ def aggregate(
         mask = list(zip(region_weights['lat'], region_weights['lon']))
         cell_weights = region_weights['percent_overlap'].tolist()
 
-        # Prepare arrays for indices and weights. Coordinates are matched by exact
-        # equality, so a weights file built for a different grid fails here; report
-        # which cell is at fault instead of an unexplained IndexError.
-        try:
-            lat_indices = np.array([np.where(lats == lat)[0][0] for lat, _ in mask])
-            lon_indices = np.array([np.where(lons == lon)[0][0] for _, lon in mask])
-        except IndexError:
-            unmatched = [
-                (lat, lon) for lat, lon in mask
-                if not len(np.where(lats == lat)[0]) or not len(np.where(lons == lon)[0])
-            ]
-            raise ValueError(
-                f"Region '{region_id}' references grid cell(s) that do not exist in "
-                f"'{netcdf}', e.g. {unmatched[:3]}. The NetCDF file has corrdinates like "
-                f"{list(zip(lats, lons))[:3]}. The weights file must have been "
-                f"computed for this exact grid. Check it with: "
-                f"validate_weights <weights.csv> --netcdf <file.nc>"
-            ) from None
+        # Resolve to grid indices. _check_weights_on_grid has already established that
+        # every coordinate in the file is on the grid, so these lookups cannot miss.
+        lat_indices = np.array([np.where(lats == lat)[0][0] for lat, _ in mask])
+        lon_indices = np.array([np.where(lons == lon)[0][0] for _, lon in mask])
         
         # Force float: an all-integer weights column would otherwise truncate the
         # secondary-weight multiplication below.

@@ -377,6 +377,57 @@ def test_correct_weights_flag_changes_the_result(tmp_path, mini_tas_nc):
 
 
 # --------------------------------------------------------------------------- #
+# aggregate - coordinate precision
+# --------------------------------------------------------------------------- #
+
+#: A tenth-degree grid in the style of E-OBS. Unlike the 1 degree mini grid and the
+#: 0.25/0.5 degree shipped grids, 0.1 is not a binary fraction, so these axes read back
+#: from the NetCDF carrying representation noise.
+TENTH_LATS = np.arange(46.05, 47.05, 0.1)
+TENTH_LONS = np.arange(4.05, 5.05, 0.1)
+
+
+def _tenth_degree_case(tmp_path, lats, lons):
+    """A 0.1 degree NetCDF plus a weights file written at the CSV's 3 decimals."""
+    netcdf = make_grid_nc(tmp_path / "tenth.nc", lats=lats, lons=lons, n_time=2)
+    weights = _weights_file(tmp_path, [
+        (round(float(lats[3]), 3), round(float(lons[7]), 3), "R", 0.25),
+        (round(float(lats[4]), 3), round(float(lons[9]), 3), "R", 0.75),
+    ])
+    expected = [0.25 * _value(t, 3, 7) + 0.75 * _value(t, 4, 9) for t in range(2)]
+    return netcdf, weights, expected
+
+
+def test_a_tenth_degree_grid_matches_its_weights(tmp_path):
+    """The axis holds 4.1499999999999995 where the weights file holds 4.15.
+
+    Aggregating E-OBS failed with "references grid cell(s) that do not exist" even
+    though the weights had been computed for exactly that file, because the lookup
+    compared the raw axis against the 3 decimals the CSV stores.
+    """
+    assert any(x != round(x, 3) for x in TENTH_LONS.tolist()), "grid carries no noise"
+
+    netcdf, weights, expected = _tenth_degree_case(tmp_path, TENTH_LATS, TENTH_LONS)
+
+    df = _aggregate(tmp_path, netcdf, weights)
+
+    assert list(df["tas"]) == pytest.approx(expected)
+
+
+def test_float32_stored_coordinates_match_their_weights(tmp_path):
+    """The other source of noise: coordinates stored as float32 in the file."""
+    lats = np.arange(46.05, 47.05, 0.1, dtype=np.float32).astype(float)
+    lons = np.arange(4.05, 5.05, 0.1, dtype=np.float32).astype(float)
+    assert any(x != round(x, 3) for x in lons.tolist()), "grid carries no noise"
+
+    netcdf, weights, expected = _tenth_degree_case(tmp_path, lats, lons)
+
+    df = _aggregate(tmp_path, netcdf, weights)
+
+    assert list(df["tas"]) == pytest.approx(expected)
+
+
+# --------------------------------------------------------------------------- #
 # aggregate - error reporting
 # --------------------------------------------------------------------------- #
 

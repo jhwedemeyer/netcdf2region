@@ -35,6 +35,9 @@ from netcdf2region.compute_grid_weights import (
     load_regions,
     load_template_grid,
 )
+#: The precision coordinates are stored and matched at. Imported rather than redefined
+#: so this check cannot drift from what ``aggregate`` actually does.
+from netcdf2region.netcdf2region import COORD_DECIMALS
 
 #: Columns every weights CSV must have, in this order.
 REQUIRED_COLUMNS = ["lat", "lon", "region_id", "percent_overlap"]
@@ -42,9 +45,6 @@ REQUIRED_COLUMNS = ["lat", "lon", "region_id", "percent_overlap"]
 #: Weights are rounded to 2 decimals when sampled and 6 when rescued via exact
 #: geometry, so anything above 1 by more than a rounding step is a real error.
 WEIGHT_TOLERANCE = 1e-9
-
-#: ``compute_overlap`` rounds coordinates to 3 decimals before writing them.
-COORD_DECIMALS = 3
 
 ERROR = "error"
 WARNING = "warning"
@@ -271,9 +271,10 @@ def _check_cell_sums(df, max_cell_sum):
 def _check_coords_on_grid(df, coordinates):
     """Check 7: every coordinate in the file is an actual grid coordinate.
 
-    ``aggregate`` resolves weights to grid indices with exact float equality
-    (``np.where(lats == lat)``), so a coordinate that is off by a rounding step
-    is not a cosmetic problem - it makes aggregation fail outright.
+    ``aggregate`` resolves weights to grid indices by equality after rounding both
+    sides to ``COORD_DECIMALS`` (``np.where(lats == lat)``), which is what this check
+    reproduces. A coordinate that is off by more than a rounding step is therefore not
+    a cosmetic problem - it makes aggregation fail outright.
     """
     if coordinates is None:
         return Check(
