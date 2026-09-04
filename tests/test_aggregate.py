@@ -508,6 +508,39 @@ def test_secondary_weights_on_a_different_grid_are_rejected(tmp_path, mini_tas_n
         )
 
 
+def test_secondary_weights_on_a_larger_grid_are_rejected(tmp_path, mini_tas_nc):
+    """A bigger grid must report the mismatch, not a numpy broadcast error."""
+    big_lats = np.arange(0.5, 20.0, 1.0)
+    pop_nc = make_grid_nc(
+        tmp_path / "pop.nc", var="pop", lats=big_lats, lons=MINI_LONS,
+    )
+    weights = _weights_file(tmp_path, [(MINI_LATS[0], MINI_LONS[0], "R", 1.0)])
+
+    with pytest.raises(ValueError, match="Latitude coordinates mismatch") as excinfo:
+        _aggregate(
+            tmp_path, mini_tas_nc, weights,
+            secondary_weights_var="pop", secondary_weights_netcdf=pop_nc,
+        )
+
+    message = str(excinfo.value)
+    assert f"{len(MINI_LATS)} values" in message
+    assert f"{len(big_lats)} values" in message
+
+
+def test_secondary_weights_with_extra_longitudes_are_rejected(tmp_path, mini_tas_nc):
+    pop_nc = make_grid_nc(
+        tmp_path / "pop.nc", var="pop",
+        lats=MINI_LATS, lons=np.arange(0.5, 20.0, 1.0),
+    )
+    weights = _weights_file(tmp_path, [(MINI_LATS[0], MINI_LONS[0], "R", 1.0)])
+
+    with pytest.raises(ValueError, match="Longitude coordinates mismatch"):
+        _aggregate(
+            tmp_path, mini_tas_nc, weights,
+            secondary_weights_var="pop", secondary_weights_netcdf=pop_nc,
+        )
+
+
 def test_secondary_weights_with_a_single_timestep_are_squeezed(tmp_path, mini_tas_nc):
     pop_nc = make_grid_nc(
         tmp_path / "pop.nc", var="pop", n_time=1,

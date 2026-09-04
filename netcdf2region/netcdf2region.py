@@ -151,6 +151,29 @@ def correct_weights(weights):
     return weights.drop(columns=['correction_factor'])
 
 
+def _describe_axis(values):
+    """One-line description of a coordinate axis, for error messages."""
+    if len(values) == 0:
+        return "0 values"
+    return f"{len(values)} values from {values[0]} to {values[-1]}"
+
+
+def _check_axis_match(name, primary, secondary):
+    """Raise if a secondary-weights axis is not the primary axis.
+
+    The length is checked first: np.allclose on axes of different length raises
+    a broadcast error from inside numpy rather than the message we want.
+    """
+    if len(primary) != len(secondary) or not np.allclose(primary, secondary):
+        raise ValueError(
+            f"{name} coordinates mismatch between primary data and secondary "
+            f"weights file. Primary grid has {_describe_axis(primary)}, "
+            f"secondary weights have {_describe_axis(secondary)}. The secondary "
+            "weights file must be on the exact same grid as the input NetCDF; "
+            "crop or regrid it to that grid first."
+        )
+
+
 def validate_secondary_weights(
         lats,
         lons,
@@ -164,10 +187,8 @@ def validate_secondary_weights(
     Accepts 2D (lat, lon) or 3D (time, lat, lon) with single timestep.
     3D data with time=1 will be squeezed to 2D by the caller.
     """
-    if not np.allclose(lats, secondary_lats):
-        raise ValueError("Latitude coordinates mismatch between primary data and secondary weights file.")
-    if not np.allclose(lons, secondary_lons):
-        raise ValueError("Longitude coordinates mismatch between primary data and secondary weights file.")
+    _check_axis_match("Latitude", lats, secondary_lats)
+    _check_axis_match("Longitude", lons, secondary_lons)
 
     if secondary_data.ndim == 3:
         if secondary_data.shape[0] != 1:
@@ -266,7 +287,8 @@ def aggregate(
             ]
             raise ValueError(
                 f"Region '{region_id}' references grid cell(s) that do not exist in "
-                f"'{netcdf}', e.g. {unmatched[:3]}. The weights file must have been "
+                f"'{netcdf}', e.g. {unmatched[:3]}. The NetCDF file has corrdinates like "
+                f"{list(zip(lats, lons))[:3]}. The weights file must have been "
                 f"computed for this exact grid. Check it with: "
                 f"validate_weights <weights.csv> --netcdf <file.nc>"
             ) from None
