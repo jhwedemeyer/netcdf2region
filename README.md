@@ -65,6 +65,7 @@ netcdf2region \
     [--secondary_weights_var <secondary_weight_variable>] \
     [--secondary_weights_netcdf <secondary_weights.nc>] \
     [--allow_nan] \
+    [--replace_nans_with_zeros] \
     [--shift_longitudes]
 ```
 
@@ -81,6 +82,7 @@ netcdf2region \
 - `--secondary_weights_var`: (Optional) Name of a secondary weight variable in the secondary NetCDF file. Must have dimensions `(lat, lon)` on the exact same grid as `--netcdf`; the run aborts if the coordinates differ, so crop or regrid the secondary file first. Values are multiplied with `percent_overlap` from the weights CSV during aggregation.
 - `--secondary_weights_netcdf`: Path to the NetCDF file containing `--secondary_weights_var`. Required when `--secondary_weights_var` is provided.
 - `--allow_nan`: (Optional) By default the command aborts if the aggregated variable (or the secondary weight variable) contains NaN values, since these silently corrupt the regional results. Set this flag to proceed anyway: a warning is printed instead, and every region that overlaps a NaN grid cell aggregates to NaN.
+- `--replace_nans_with_zeros`: (Optional) Requires `--allow_nan`. Instead of propagating NaN values into the regional aggregate, excludes NaN grid cells from the calculation by setting their weight to zero. Grid cells that are NaN across all time steps are excluded entirely; any remaining NaN values (e.g. partial temporal coverage) are replaced with zero. This is appropriate for variables where NaN represents missing land coverage rather than a meaningful absence of data (e.g. terrestrial water storage over ocean grid cells). Note the following behaviour for fully NaN regions (all contributing cells are NaN): for `--method mean` the result is NaN (zero total weight); for `--method sum` the result is 0.
 - `--shift_longitudes`: (Optional) Shift the input longitudes from `[0, 360]` to `[-180, 180]` and reorder the data accordingly. Weights files are always written in `[-180, 180]`, so a NetCDF on a `[0, 360]` grid (e.g. raw ERA5) needs this flag; without it the command aborts. Same meaning as in `compute_grid_weights`.
 
 See the command-line help (`--help`) for more options and details.
