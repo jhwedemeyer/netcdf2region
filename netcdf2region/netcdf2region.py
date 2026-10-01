@@ -130,8 +130,6 @@ def load_netcdf(
     if np.isnan(data_var.values).any():
         if not allow_nan:
             raise ValueError(f"Variable '{var}' in file '{netcdf_path}' contains NaN values. This may affect the aggregation results. Add --allow_nan to proceed anyway.")
-        # No print here: aggregate() has full context on how NaNs will be handled
-        # and prints an accurate message after this call returns.
 
     return (
         data_var.values,
@@ -262,7 +260,8 @@ def aggregate(
     secondary_weights_netcdf=None,
     allow_nan=False,
     shift_longitudes=False,
-    replace_nans_with_zeros=False,
+    exclude_nan_cells=False,
+    fill_nans=None,
 ):
     """ Aggregate gridded NetCDF data to regions using weights. """
 
@@ -275,35 +274,30 @@ def aggregate(
     if correct_weights_flag:
         weights_df = correct_weights(weights_df)
 
-    # Load NetCDF data
+    # Load NetCDF data. Choosing a NaN handling mode implies NaNs are expected in
+    # the variable (but not in the secondary weights, which these modes don't touch).
     print(f"Loading NetCDF file: {netcdf}")
     var_data, lats, lons, time_var = load_netcdf(
         netcdf,
         var,
         time_var=time_var_name,
         require_time=True,
-        allow_nan=allow_nan,
+        allow_nan=allow_nan or exclude_nan_cells or fill_nans is not None,
         shift_longitudes=shift_longitudes,
     )
 
     # Print NaN handling summary now that we know whether NaNs are present
-    has_nans = np.isnan(var_data).any()
-    if has_nans:
-        if replace_nans_with_zeros:
-            print(
-                f"Warning: Variable '{var}' contains NaN values. "
-                f"NaN handling mode: replace_nans_with_zeros is ACTIVE. "
-                f"Cells that are NaN across all time steps are excluded (weight set to 0); "
-                f"remaining NaN values are replaced with 0 before aggregation. "
-                f"Note: for method='mean', all-NaN regions still return NaN (zero-weight ZeroDivisionError). "
-                f"For method='sum', all-NaN regions return 0, not NaN."
-            )
+    if np.isnan(var_data).any():
+        steps = []
+        if exclude_nan_cells:
+            steps.append("cells that are NaN at every time step are excluded")
+        if fill_nans is not None:
+            remaining = "remaining " if exclude_nan_cells else ""
+            steps.append(f"{remaining}NaN values are replaced with {fill_nans}")
         else:
-            print(
-                f"Warning: Variable '{var}' contains NaN values. "
-                f"NaN handling mode: default (replace_nans_with_zeros is NOT active). "
-                f"Affected regions will aggregate to NaN."
-            )
+            steps.append("affected regions aggregate to NaN")
+        handling = "; then ".join(steps)
+        print(f"Warning: Variable '{var}' contains NaN values. {handling[0].upper()}{handling[1:]}.")
 
     _check_weights_on_grid(weights_df, lats, lons, netcdf)
 
@@ -318,6 +312,11 @@ def aggregate(
             allow_nan=allow_nan,
             shift_longitudes=shift_longitudes,
         )
+        if np.isnan(secondary_data).any():
+            print(
+                f"Warning: Secondary weight variable '{secondary_weights_var}' contains NaN values. "
+                "Regions covering a NaN secondary weight will aggregate to NaN."
+            )
 
         validate_secondary_weights(
             lats=lats,
@@ -365,23 +364,26 @@ def aggregate(
         # Shape: (num_cells, num_times)
         region_values = var_data[:, lat_indices, lon_indices].T  # shape: (num_cells, num_times)
 
-        # Handle NaN values if requested
-        if replace_nans_with_zeros and np.isnan(region_values).any():
-            # Identify cells that are NaN across every time step: these are structural
-            # NaNs (e.g. ocean cells) and should be excluded by zeroing their weight.
-            # Cells with only some NaN time steps have their NaN values replaced with 0
-            # so that the region aggregate does not become NaN.
-            # In both cases the weight is kept (or zeroed), never set to NaN, because
-            # np.average propagates NaN weights into the result.
+        # Cells that are NaN at every time step are structural (e.g. ocean cells):
+        # drop them by zeroing their weight. Their values must be zeroed too, since
+        # NaN * 0 is still NaN. This runs before filling, so the fill only reaches
+        # the cells that are kept.
+        if exclude_nan_cells:
             cells_all_nan = np.isnan(region_values).all(axis=1)
             region_values[cells_all_nan, :] = 0
             weights_arr[cells_all_nan] = 0
-            # Replace any remaining scattered NaNs (partial coverage) with 0
-            region_values = np.where(np.isnan(region_values), 0, region_values)
+
+        # Replace any remaining NaNs with the fill value, keeping the cell's weight.
+        # Note this pulls mean/std towards the fill value.
+        if fill_nans is not None:
+            region_values = np.nan_to_num(region_values, nan=fill_nans)
 
         # Vectorized aggregation over all time steps
         # region_values and effective_weights: shape (num_cells, num_times)
-        if method == "mean":
+        if exclude_nan_cells and cells_all_nan.all():
+            # No data left in the region: NaN for every method, so sum doesn't report 0
+            agg = np.full(region_values.shape[1], np.nan)
+        elif method == "mean":
             try:
                 agg = np.average(region_values, axis=0, weights=weights_arr)
             except ZeroDivisionError:
@@ -453,13 +455,22 @@ def main():
         ),
     )
     parser.add_argument(
-        "--replace_nans_with_zeros",
+        "--exclude_nan_cells",
         action="store_true",
         help=(
-            "Replace NaN values with zeros during aggregation. "
-            "Cells entirely NaN across all time steps are excluded (weights set to NaN). "
-            "Cells with some NaN values are replaced with 0 to prevent the entire region from becoming NaN. "
-            "Requires --allow_nan."
+            "Exclude grid cells that are NaN at every time step (e.g. ocean cells) from "
+            "the aggregation. Implies --allow_nan for the variable."
+        ),
+    )
+    parser.add_argument(
+        "--fill_nans",
+        type=float,
+        default=None,
+        metavar="VALUE",
+        help=(
+            "Replace NaN values with VALUE while keeping the cell's weight. Runs after "
+            "--exclude_nan_cells if both are given. Biases mean/std towards VALUE. "
+            "Implies --allow_nan for the variable."
         ),
     )
     parser.add_argument(
@@ -473,9 +484,6 @@ def main():
         raise ValueError("--secondary_weights_netcdf requires --secondary_weights_var.")
     if args.secondary_weights_var and not args.secondary_weights_netcdf:
         raise ValueError("--secondary_weights_var requires --secondary_weights_netcdf.")
-    
-    if args.replace_nans_with_zeros and not args.allow_nan:
-        raise ValueError("--replace_nans_with_zeros requires --allow_nan.")
 
     if args.precalc_weights:
         weights = precalc_weights_path(args.precalc_weights)
@@ -495,7 +503,8 @@ def main():
         secondary_weights_netcdf=args.secondary_weights_netcdf,
         allow_nan=args.allow_nan,
         shift_longitudes=args.shift_longitudes,
-        replace_nans_with_zeros=args.replace_nans_with_zeros,
+        exclude_nan_cells=args.exclude_nan_cells,
+        fill_nans=args.fill_nans,
     )
 
 if __name__ == "__main__":
