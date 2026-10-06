@@ -11,12 +11,9 @@ dependencies = [
     "numpy",
     "pandas",
     "xarray",
-    "rasterio",
     "geopandas",
-    "matplotlib",
     "shapely",
     "joblib",
-    "scipy",
     "tqdm",
     "netcdf4"
 ]
@@ -27,7 +24,7 @@ test = ["pytest>=7", "pytest-cov"]
 
 [project.scripts]
 compute_grid_weights = "netcdf2region.compute_grid_weights:main"
-netcdf2region = "netcdf2region.netcdf2region:main"
+netcdf2region = "netcdf2region.aggregate:main"
 validate_weights = "netcdf2region.validate_weights:main"
 
 [tool.setuptools.packages.find]

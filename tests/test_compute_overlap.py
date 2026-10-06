@@ -19,7 +19,7 @@ from factories import (
     mini_polygons,
     write_regions,
 )
-from netcdf2region.data_handling import load_regions
+from netcdf2region.load_regions import load_regions
 from netcdf2region.sampled_weights import compute_overlap
 from netcdf2region.validate_weights import validate_weights
 
@@ -229,6 +229,15 @@ def test_load_regions_uses_the_first_column_under_yes(tmp_path):
 
     assert "region_id" in loaded.columns
     assert list(loaded["region_id"]) == ["X"]
+
+
+def test_load_regions_lists_the_columns_when_the_gid_is_missing(tmp_path):
+    """Without --yes there is no prompt: the error must name the columns to pick from."""
+    regions = make_regions({"X": box(0, 0, 1, 1)}, gid_col="my_id")
+    shapefile = write_regions(regions, tmp_path / "r.geojson")
+
+    with pytest.raises(KeyError, match="my_id"):
+        load_regions(shapefile, False, None, "GID_1")
 
 
 def test_load_regions_reprojects_to_wgs84(tmp_path):

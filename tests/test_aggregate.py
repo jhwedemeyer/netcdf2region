@@ -11,10 +11,10 @@ import pandas as pd
 import pytest
 
 from factories import MINI_LATS, MINI_LONS, make_grid_nc, make_weights_df
-from netcdf2region.netcdf2region import (
-    aggregate,
+from netcdf2region.load_grid import load_netcdf
+from netcdf2region.aggregate import aggregate
+from netcdf2region.load_weights import (
     correct_weights,
-    load_netcdf,
     precalc_weights_path,
     validate_secondary_weights,
 )
@@ -684,7 +684,7 @@ def _cli(*args):
 
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return subprocess.run(
-        [sys.executable, "-m", "netcdf2region.netcdf2region", *args],
+        [sys.executable, "-m", "netcdf2region.aggregate", *args],
         capture_output=True, text=True, cwd=repo_root,
     )
 
@@ -774,3 +774,12 @@ def test_cli_rejects_an_unsupported_method(tmp_path, mini_tas_nc):
 
     assert result.returncode == 2
     assert "invalid choice" in result.stderr
+
+
+def test_load_netcdf_rejects_a_grid_finer_than_the_stored_coordinate_precision(tmp_path):
+    path = make_grid_nc(
+        tmp_path / "g.nc", lons=np.arange(0.0, 0.004, 0.0005), n_time=1
+    )
+
+    with pytest.raises(ValueError, match="finer than the supported resolution"):
+        load_netcdf(path, "tas")

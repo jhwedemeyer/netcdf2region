@@ -15,9 +15,10 @@ import os
 import numpy as np
 import pytest
 
-from netcdf2region.data_handling import load_regions, load_template_grid
+from netcdf2region.load_grid import load_template_grid
+from netcdf2region.load_regions import load_regions
 from netcdf2region.sampled_weights import compute_overlap
-from netcdf2region.netcdf2region import precalc_weights_path
+from netcdf2region.load_weights import precalc_weights_path
 from netcdf2region.validate_weights import validate_weights
 
 pytestmark = pytest.mark.cluster

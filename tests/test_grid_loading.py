@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from factories import MINI_LATS, MINI_LONS, make_grid_nc
-from netcdf2region.data_handling import load_template_grid
+from netcdf2region.load_grid import load_template_grid
 
 
 def _load(path, origin="centered", shift=False):
@@ -140,3 +140,27 @@ def test_unsorted_longitudes_are_rejected(tmp_path):
 def test_invalid_coordinate_origin_is_rejected(tmp_path):
     with pytest.raises(ValueError, match="Invalid coordinate origin"):
         _load(make_grid_nc(tmp_path / "g.nc"), origin="bottom-right")
+
+
+def test_rejects_a_grid_finer_than_the_stored_coordinate_precision(tmp_path):
+    """Coordinates are rounded to 3 decimals, so finer cells would collide."""
+    path = make_grid_nc(
+        tmp_path / "g.nc",
+        lats=np.arange(0.0, 0.004, 0.0005),
+        lons=MINI_LONS,
+    )
+
+    with pytest.raises(ValueError, match="finer than the supported resolution"):
+        _load(path)
+
+
+def test_accepts_a_grid_at_the_stored_coordinate_precision(tmp_path):
+    path = make_grid_nc(
+        tmp_path / "g.nc",
+        lats=np.arange(0.0005, 0.008, 0.001),
+        lons=np.arange(0.0005, 0.008, 0.001),
+    )
+
+    coords = _load(path)
+
+    assert np.isclose(coords["lat_res"], 0.001)

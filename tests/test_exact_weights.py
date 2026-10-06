@@ -22,7 +22,7 @@ from netcdf2region.exact_weights import (
     grid_edges,
     region_cell_fractions,
 )
-from netcdf2region.netcdf2region import aggregate
+from netcdf2region.aggregate import aggregate
 
 
 def _regions(polygons):
@@ -122,8 +122,8 @@ def test_cell_area_shrinks_with_latitude():
 # --------------------------------------------------------------------------- #
 
 def test_csv_roundtrip_and_area_weighted_mean(tmp_path):
-    """A region spanning a low- and a high-latitude cell: the mean is area-weighted,
-    the sum is not."""
+    """A region spanning a low- and a high-latitude cell: with area_weighted the mean
+    is area-weighted; without it, and for the sum, cells count by covered fraction only."""
     lats = np.arange(0.5, 61.0, 1.0)   # regular 1 degree grid; the region uses rows 0 and 60
     lons = np.array([0.5, 1.5])
     values = np.zeros((1, len(lats), len(lons)))
@@ -140,14 +140,34 @@ def test_csv_roundtrip_and_area_weighted_mean(tmp_path):
     a_lo, a_hi = weights.set_index("lat").cell_area_km2.loc[[0.5, 60.5]]
 
     out = tmp_path / "mean.csv"
-    aggregate(netcdf=nc_data, weights=str(w), method="mean", output=str(out), var="tas")
+    aggregate(netcdf=nc_data, weights=str(w), method="mean", output=str(out), var="tas",
+              area_weighted=True)
     mean = pd.read_csv(out).tas.iloc[0]
     assert mean == pytest.approx((10 * a_lo + 20 * a_hi) / (a_lo + a_hi))
     assert mean < 15  # the smaller high-latitude cell counts less than in a plain mean
 
+    out = tmp_path / "plain_mean.csv"
+    aggregate(netcdf=nc_data, weights=str(w), method="mean", output=str(out), var="tas")
+    assert pd.read_csv(out).tas.iloc[0] == pytest.approx(15.0)
+
+    with pytest.raises(ValueError, match="mean or std"):
+        aggregate(netcdf=nc_data, weights=str(w), method="sum", output=str(out), var="tas",
+                  area_weighted=True)
+
     out = tmp_path / "sum.csv"
     aggregate(netcdf=nc_data, weights=str(w), method="sum", output=str(out), var="tas")
     assert pd.read_csv(out).tas.iloc[0] == pytest.approx(30.0)
+
+
+def test_area_weighted_requires_cell_area_column(tmp_path):
+    nc_data = make_grid_nc(tmp_path / "data.nc", lats=np.array([0.5]), lons=np.array([0.5]),
+                           n_time=1, values=np.ones((1, 1, 1)))
+    w = tmp_path / "w.csv"
+    pd.DataFrame({"lat": [0.5], "lon": [0.5], "region_id": ["R"],
+                  "percent_overlap": [1.0]}).to_csv(w, index=False)
+    with pytest.raises(ValueError, match="cell_area_km2"):
+        aggregate(netcdf=nc_data, weights=str(w), method="mean",
+                  output=str(tmp_path / "o.csv"), var="tas", area_weighted=True)
 
 
 def test_validate_weights_accepts_cell_area_column(tmp_path):

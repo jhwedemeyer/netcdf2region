@@ -39,7 +39,7 @@ compute_grid_weights <netcdf> <shapefile> <output> [options]
 
 #### Options
 
-- `--method <exact|sampling>`: How overlaps are computed (default: exact). `exact` intersects each region with the grid cells and also writes each cell's area (`cell_area_km2`), so `netcdf2region` computes area-weighted means and standard deviations. `sampling` estimates overlaps by sampling points in each cell.
+- `--method <exact|sampling>`: How overlaps are computed (default: exact). `exact` intersects each region with the grid cells and also writes each cell's area (`cell_area_km2`), which `netcdf2region --area_weighted` uses to compute area-weighted means and standard deviations. `sampling` estimates overlaps by sampling points in each cell.
 - `--points_per_cell <int>`: Number of points per grid cell, only with `--method sampling` (default: 100).
 - `--point_distribution <uniform|random>`: Distribution of points within grid cells, only with `--method sampling` (default: uniform)
 - `--simplify`: Simplify region geometries for faster computation.
@@ -49,7 +49,7 @@ compute_grid_weights <netcdf> <shapefile> <output> [options]
 - `--coordinate_origin <str>`: Coordinate origin of the grid (default: centered).
 - `--gid <str>`: Geo identifier of the shapefile (default: GID_1)
 - `--shift_longitudes`: Shift longitudes from [0, 360] to [-180, 180]
-- `--yes`: Automatically answer yes to prompts.
+- `--yes`: If the `--gid` column is missing, use the shapefile's first column as region identifier.
 
 See `--help` for more details.
 
@@ -70,7 +70,8 @@ netcdf2region \
     [--allow_nan] \
     [--exclude_nan_cells] \
     [--fill_nans <value>] \
-    [--shift_longitudes]
+    [--shift_longitudes] \
+    [--area_weighted]
 ```
 
 #### Arguments
@@ -89,6 +90,7 @@ netcdf2region \
 - `--exclude_nan_cells`: (Optional) Implies `--allow_nan` for the aggregated variable (not for the secondary weights). Excludes grid cells that are NaN at every time step from the aggregation. Cells that are NaN at only some time steps are not affected, so regions still aggregate to NaN at those time steps unless `--fill_nans` is also set. A region whose cells are all excluded aggregates to NaN.
 - `--fill_nans <value>`: (Optional) Implies `--allow_nan` for the aggregated variable (not for the secondary weights). Replaces NaN values with `<value>` (e.g. `--fill_nans 0`) while keeping the cell's weight, so missing values no longer turn the regional aggregate into NaN. If `--exclude_nan_cells` is also given, the exclusion runs first, so only NaNs in the remaining cells are filled. Note that for `mean`/`std` this pulls the result towards the fill value at the affected cells and time steps.
 - `--shift_longitudes`: (Optional) Shift the input longitudes from `[0, 360]` to `[-180, 180]` and reorder the data accordingly. Weights files are always written in `[-180, 180]`, so a NetCDF on a `[0, 360]` grid (e.g. raw ERA5) needs this flag; without it the command aborts. Same meaning as in `compute_grid_weights`.
+- `--area_weighted`: (Optional) Weight each grid cell by the area it contributes to the region (covered fraction × cell area) instead of by the covered fraction alone. Use this for `mean`/`std` of intensive quantities (temperature, precipitation rate, ...) on regular lat/lon grids, where cells shrink towards the poles. Requires a weights file with a `cell_area_km2` column, as written by `compute_grid_weights --method exact`. Not allowed with `sum`, which should add up per-cell totals by covered fraction only.
 
 See the command-line help (`--help`) for more options and details.
 
@@ -166,12 +168,9 @@ compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --yes --shapefile_l
 - numpy
 - pandas
 - xarray
-- rasterio
 - geopandas
-- matplotlib
 - shapely
 - joblib
-- scipy
 - tqdm
 - netCDF4
 

@@ -89,4 +89,9 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-paper/
+# Paper: code, figures and small benchmark results are tracked; data is not
+paper/data/
+paper/related_literature/
+paper/benchmark/work/
+
+paper/*

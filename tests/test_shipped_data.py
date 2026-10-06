@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from netcdf2region.netcdf2region import precalc_weights_path
+from netcdf2region.load_weights import precalc_weights_path
 from netcdf2region.validate_weights import validate_weights
 
 SHIPPED_NAMES = [

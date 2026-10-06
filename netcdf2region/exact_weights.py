@@ -17,19 +17,21 @@ every intersection walks the whole outline. Regions are therefore clipped by rec
 bisection (see :func:`region_cell_fractions`).
 """
 
+import logging
+
 import numpy as np
 import pandas as pd
 import shapely
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from .data_handling import cell_bounds, load_regions, load_template_grid
+from .load_grid import COORD_DECIMALS, cell_bounds, load_template_grid
+from .load_regions import load_regions
+
+logger = logging.getLogger(__name__)
 
 #: Mean Earth radius (IUGG), the same value validate_weights uses for its area check.
 EARTH_RADIUS_KM = 6371.0088
-
-#: Weights CSVs store coordinates at 3 decimals (see netcdf2region.COORD_DECIMALS).
-COORD_DECIMALS = 3
 
 
 def grid_edges(coordinates):
@@ -262,19 +264,19 @@ def compute_exact_overlap(netcdf_path, shapefile_path, output_csv, shapefile_lay
     """Compute exact, area-aware weights for a NetCDF grid and a region file and write a CSV."""
     coordinates = load_template_grid(netcdf_path, coordinate_origin=coordinate_origin,
                                      shift_longitudes=shift_longitudes)
-    print(f"Loading shapefile: {shapefile_path}")
+    logger.info(f"Loading shapefile: {shapefile_path}")
     regions = load_regions(shapefile_path, simplify=simplify, shapefile_layer=shapefile_layer,
                            default_gid=default_gid, yes=yes)
-    print("Calculating exact overlaps between grid cells and regions...")
+    logger.info("Calculating exact overlaps between grid cells and regions...")
     df = exact_weights(regions, coordinates, n_jobs=n_jobs, backend=backend)
 
     # Unlike point sampling, exact clipping never misses small regions, so a region can
     # only be absent here if it lies entirely outside the grid's extent.
     missing = sorted(set(regions["region_id"]) - set(df["region_id"]))
     if missing:
-        print(f"Warning: {len(missing)} region(s) do not overlap the grid at all: {missing[:10]}")
+        logger.warning(f"{len(missing)} region(s) do not overlap the grid at all: {missing[:10]}")
 
     # Fractions keep 8 significant digits, so even tiny regions keep a non-zero weight.
     df.to_csv(output_csv, index=False, float_format="%.8g")
-    print(f"Done. {len(df)} rows for {df['region_id'].nunique()} regions saved to {output_csv}")
+    logger.info(f"Done. {len(df)} rows for {df['region_id'].nunique()} regions saved to {output_csv}")
     return df

@@ -1,4 +1,4 @@
-"""Tests for the pure geometry helpers in ``data_handling`` and ``sampled_weights``.
+"""Tests for the pure geometry helpers in ``load_grid`` and ``sampled_weights``.
 
 These functions have no I/O and decide where every sample point lands, so they are
 both the fastest and the highest-leverage thing to pin down.
@@ -9,7 +9,7 @@ import pytest
 from shapely.geometry import Point
 
 from factories import MINI_LATS, MINI_LONS, mini_coordinates
-from netcdf2region.data_handling import cell_bounds
+from netcdf2region.load_grid import cell_bounds
 from netcdf2region.sampled_weights import (
     generate_point_distribution,
     random_points_in_cell,

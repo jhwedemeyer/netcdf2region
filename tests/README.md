@@ -3,7 +3,7 @@
 Run it:
 
 ```bash
-pip install -e ".[test]"          # or: pip install pytest pytest-cov scipy
+pip install -e ".[test]"          # or: pip install pytest pytest-cov
 pytest                            # local suite, no cluster data needed (~11 s)
 pytest -m ""                      # also collect the cluster tests (skipped off-cluster)
 pytest --cov=netcdf2region --cov-report=term-missing

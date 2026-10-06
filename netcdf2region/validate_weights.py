@@ -23,6 +23,7 @@ or from Python::
 """
 
 import argparse
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
@@ -30,14 +31,12 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from netcdf2region.data_handling import (
+from netcdf2region.load_grid import (
+    COORD_DECIMALS,
     cell_bounds,
-    load_regions,
     load_template_grid,
 )
-#: The precision coordinates are stored and matched at. Imported rather than redefined
-#: so this check cannot drift from what ``aggregate`` actually does.
-from netcdf2region.netcdf2region import COORD_DECIMALS
+from netcdf2region.load_regions import load_regions
 
 #: Columns every weights CSV must have, in this order.
 REQUIRED_COLUMNS = ["lat", "lon", "region_id", "percent_overlap"]
@@ -517,7 +516,7 @@ def validate_weights(
     Args:
         weights: Path to a weights CSV, or a DataFrame with the weights columns.
         coordinates: Optional grid description from
-            :func:`~netcdf2region.data_handling.load_template_grid`.
+            :func:`~netcdf2region.load_grid.load_template_grid`.
             Enables the on-grid coordinate check.
         regions: Optional GeoDataFrame (with a ``region_id`` column) or path to a
             shapefile. Enables the region coverage and area checks.
@@ -606,6 +605,7 @@ def main():
         help="Exit non-zero when any check fails, including warnings",
     )
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     coordinates = None
     if args.netcdf:

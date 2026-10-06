@@ -7,6 +7,8 @@ Regions too small to catch any point are rescued afterwards with their exact geo
 overlap (see :func:`assign_missing_regions`).
 """
 
+import logging
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -14,7 +16,10 @@ from joblib import Parallel, delayed
 from shapely.geometry import Point, box
 from tqdm import tqdm
 
-from .data_handling import cell_bounds, load_regions, load_template_grid
+from .load_grid import COORD_DECIMALS, cell_bounds, load_template_grid
+from .load_regions import load_regions
+
+logger = logging.getLogger(__name__)
 
 
 def random_points_in_cell(cell_bounds, n):
@@ -100,7 +105,7 @@ def calc_cell_region_overlap(point_gdf, regions, points_per_cell, n_jobs, backen
     results = Parallel(n_jobs=n_jobs, backend=backend)(delayed(sjoin_batch)(b) for b in batches)
     joined = pd.concat(results)
 
-    print("Aggregating region overlaps per grid cell...")
+    logger.info("Aggregating region overlaps per grid cell...")
     grouped = (
         joined.groupby(["cell", "region_id"])
         .size()
@@ -176,8 +181,8 @@ def assign_missing_regions(present_ids, regions, coordinates):
                 if inter_area <= 0:
                     continue
                 row = {
-                    "lat": round(lats[i], 3),
-                    "lon": round(lons[j], 3),
+                    "lat": round(lats[i], COORD_DECIMALS),
+                    "lon": round(lons[j], COORD_DECIMALS),
                     "region_id": region_id,
                     "percent_overlap": round(inter_area / cell.area, 6),
                 }
@@ -212,15 +217,15 @@ def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell, \
     coordinates = load_template_grid(netcdf_path, coordinate_origin=coordinate_origin, shift_longitudes=shift_longitudes)
 
     # Load regions
-    print(f"Loading shapefile: {shapefile_path}")
+    logger.info(f"Loading shapefile: {shapefile_path}")
     regions = load_regions(shapefile_path, simplify=simplify, shapefile_layer=shapefile_layer, yes=yes, default_gid=default_gid)
 
     # Generate points for each grid cell
-    print(f"Generating {point_distribution}-distributed points for grid cells...")
+    logger.info(f"Generating {point_distribution}-distributed points for grid cells...")
     point_gdf, cell_coords = generate_point_distribution(coordinates, points_per_cell, point_distribution)
 
     # Estiamte overlaps with regions
-    print("Calculating overlaps between grid cells and regions...")
+    logger.info("Calculating overlaps between grid cells and regions...")
     grouped = calc_cell_region_overlap(point_gdf, regions, points_per_cell, backend=backend, n_jobs=n_jobs)
 
     # Building result table
@@ -231,8 +236,8 @@ def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell, \
         region_id = row["region_id"]
         percent = round(row["percent_overlap"], 2)
         rows.append({
-            "lat": round(lat, 3),
-            "lon": round(lon, 3),
+            "lat": round(lat, COORD_DECIMALS),
+            "lon": round(lon, COORD_DECIMALS),
             "region_id": region_id,
             "percent_overlap": percent
         })
@@ -246,12 +251,12 @@ def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell, \
     # Rescue any region not represented by a positive sampled weight (regions too small to
     # catch a sample point, or whose only overlaps rounded to zero above) by computing
     # their exact geometric overlap with the grid.
-    print("Checking for regions with no sampled overlap...")
+    logger.info("Checking for regions with no sampled overlap...")
     present_ids = set(df["region_id"].unique())
     missing_rows = assign_missing_regions(present_ids, regions, coordinates)
     if not missing_rows.empty:
-        print(f"Rescued {missing_rows['region_id'].nunique()} region(s) with no sampled overlap via exact geometry.")
+        logger.info(f"Rescued {missing_rows['region_id'].nunique()} region(s) with no sampled overlap via exact geometry.")
         df = pd.concat([df, missing_rows], ignore_index=True)
 
     df.to_csv(output_csv, index=False)
-    print(f"Done. Results saved to {output_csv}")         
+    logger.info(f"Done. Results saved to {output_csv}")         

@@ -159,7 +159,7 @@ def cluster_paths():
 @pytest.fixture(scope="session")
 def gadm_regions():
     """GADM admin1 regions from the cluster, loaded once per session."""
-    from netcdf2region.data_handling import load_regions
+    from netcdf2region.load_regions import load_regions
 
     path = CLUSTER_PATHS["gadm"]
     if not os.path.exists(path):
