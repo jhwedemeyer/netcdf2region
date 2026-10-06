@@ -426,10 +426,14 @@ def compute_overlap(netcdf_path, shapefile_path, output_csv, points_per_cell, \
 
 def main():
     """ Main function to parse arguments and run the overlap computation. """
-    parser = argparse.ArgumentParser(description="Estimate region overlaps with NetCDF grid cells via point sampling.")
+    parser = argparse.ArgumentParser(description="Compute region overlaps with NetCDF grid cells, by point sampling or exactly.")
     parser.add_argument("netcdf", help="Path to NetCDF file with lat/lon grid")
     parser.add_argument("shapefile", help="Path to shapefile (e.g., .shp)")
     parser.add_argument("output", help="Path to output CSV file")
+    parser.add_argument("--method", choices=["sampling", "exact"], default="sampling",
+                        help="'sampling' estimates overlaps from points per cell; 'exact' intersects the "
+                             "geometries and also writes each cell's area, so means become area-weighted "
+                             "(default: sampling)")
     parser.add_argument("--points_per_cell", type=int, default=100, help="Number of random points per grid cell (default: 100)")
     parser.add_argument("--point_distribution", choices=["random", "uniform"], default="uniform", help="Distribution of points within grid cells (default: uniform)")
     parser.add_argument("--simplify", action="store_true", help="Simplify region geometries")
@@ -447,6 +451,25 @@ def main():
     if args.yes:
         print("Automatic 'yes' mode enabled. All prompts will be answered with 'yes'. This may lead to incorrect assumptions if the script cannot automatically determine certain parameters. Use with caution.")
 
+
+    if args.method == "exact":
+        if args.land_sea_mask is not None:
+            print("Note: --land_sea_mask is ignored with --method exact (exact overlaps need no mask).")
+        from .exact_weights import compute_exact_overlap  # local import: exact_weights imports this module
+        compute_exact_overlap(
+            netcdf_path=args.netcdf,
+            shapefile_path=args.shapefile,
+            output_csv=args.output,
+            shapefile_layer=args.shapefile_layer,
+            default_gid=args.gid,
+            coordinate_origin=args.coordinate_origin,
+            shift_longitudes=args.shift_longitudes,
+            simplify=args.simplify,
+            n_jobs=args.n_jobs,
+            backend=args.backend,
+            yes=args.yes,
+        )
+        return
 
     compute_overlap(
         netcdf_path=args.netcdf,

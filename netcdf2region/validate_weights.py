@@ -41,6 +41,8 @@ from netcdf2region.netcdf2region import COORD_DECIMALS
 
 #: Columns every weights CSV must have, in this order.
 REQUIRED_COLUMNS = ["lat", "lon", "region_id", "percent_overlap"]
+#: Written by `compute_grid_weights --method exact`; makes `aggregate` area-weight means.
+OPTIONAL_COLUMNS = ["cell_area_km2"]
 
 #: Weights are rounded to 2 decimals when sampled and 6 when rescued via exact
 #: geometry, so anything above 1 by more than a rounding step is a real error.
@@ -138,7 +140,7 @@ def _worst_offenders(series, n=5):
 def _check_schema(df):
     """Check 1: the CSV has exactly the expected columns with usable dtypes."""
     missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
-    extra = [c for c in df.columns if c not in REQUIRED_COLUMNS]
+    extra = [c for c in df.columns if c not in REQUIRED_COLUMNS + OPTIONAL_COLUMNS]
     if missing:
         return Check(
             "schema", False, ERROR,

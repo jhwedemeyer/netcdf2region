@@ -274,6 +274,14 @@ def aggregate(
     if correct_weights_flag:
         weights_df = correct_weights(weights_df)
 
+    # Weights from `compute_grid_weights --method exact` carry each cell's area. A mean or
+    # standard deviation of an intensive quantity (temperature, precipitation rate, ...)
+    # must weight cells by the area they contribute, i.e. covered fraction x cell area;
+    # a sum of per-cell totals (population, ...) must use the covered fraction alone.
+    area_weighted = "cell_area_km2" in weights_df.columns and method in ("mean", "std")
+    if area_weighted:
+        print("Weights include cell areas: computing an area-weighted " + method + ".")
+
     # Load NetCDF data. Choosing a NaN handling mode implies NaNs are expected in
     # the variable (but not in the secondary weights, which these modes don't touch).
     print(f"Loading NetCDF file: {netcdf}")
@@ -344,7 +352,9 @@ def aggregate(
 
         # Build mask and weights for each grid cell in the region
         mask = list(zip(region_weights['lat'], region_weights['lon']))
-        cell_weights = region_weights['percent_overlap'].tolist()
+        cell_weights = region_weights['percent_overlap'].to_numpy()
+        if area_weighted:
+            cell_weights = cell_weights * region_weights['cell_area_km2'].to_numpy()
 
         # Resolve to grid indices. _check_weights_on_grid has already established that
         # every coordinate in the file is on the grid, so these lookups cannot miss.
