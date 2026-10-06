@@ -25,7 +25,7 @@ This package is still in the early stages of development. Please check that all 
 
 ### 1. Compute Grid Weights
 
-The `compute_grid_weights` command estimates the overlap between NetCDF grid cells and regions defined in a shapefile via point sampling. This step is performed separately to enable efficient repeated aggregations. The package also provides precomputed weights for common grids, such as ERA5, and shapefiles, such as GADM 3.6. See the section 'Precomputed weights' for more information.
+The `compute_grid_weights` command estimates the overlap between NetCDF grid cells and regions defined in a shapefile, by default exactly from the geometries. This step is performed separately to enable efficient repeated aggregations. The package also provides precomputed weights for common grids, such as ERA5, and shapefiles, such as GADM 3.6. See the section 'Precomputed weights' for more information.
 
 ```bash
 compute_grid_weights <netcdf> <shapefile> <output> [options]
@@ -39,10 +39,10 @@ compute_grid_weights <netcdf> <shapefile> <output> [options]
 
 #### Options
 
-- `--points_per_cell <int>`: Number of random points per grid cell (default: 100).
-- `--point_distribution <uniform|random>`: Distribution of points within grid cells (default: uniform)
+- `--method <exact|sampling>`: How overlaps are computed (default: exact). `exact` intersects each region with the grid cells and also writes each cell's area (`cell_area_km2`), so `netcdf2region` computes area-weighted means and standard deviations. `sampling` estimates overlaps by sampling points in each cell.
+- `--points_per_cell <int>`: Number of points per grid cell, only with `--method sampling` (default: 100).
+- `--point_distribution <uniform|random>`: Distribution of points within grid cells, only with `--method sampling` (default: uniform)
 - `--simplify`: Simplify region geometries for faster computation.
-- `--land_sea_mask <file>`: Path to a land-sea mask NetCDF file for faster computation (optional).
 - `--shapefile_layer <int>`: Layer number in the shapefile to use (default: first layer).
 - `--backend <str>`: Parallel backend to use (`threading` by default).
 - `--n_jobs <int>`: Number of parallel jobs (default: 8).

@@ -1,4 +1,4 @@
-"""Tests for the pure geometry helpers in ``compute_grid_weights``.
+"""Tests for the pure geometry helpers in ``data_handling`` and ``sampled_weights``.
 
 These functions have no I/O and decide where every sample point lands, so they are
 both the fastest and the highest-leverage thing to pin down.
@@ -9,8 +9,8 @@ import pytest
 from shapely.geometry import Point
 
 from factories import MINI_LATS, MINI_LONS, mini_coordinates
-from netcdf2region.compute_grid_weights import (
-    cell_bounds,
+from netcdf2region.data_handling import cell_bounds
+from netcdf2region.sampled_weights import (
     generate_point_distribution,
     random_points_in_cell,
     uniform_points_in_cell,
@@ -157,7 +157,7 @@ def test_cell_bounds_tile_the_grid_without_gaps():
 def test_generate_point_distribution_centered_cell_count():
     """A centred grid treats every coordinate as a cell centre."""
     coords = mini_coordinates("centered")
-    point_gdf, cell_coords = generate_point_distribution(None, coords, 4, "uniform")
+    point_gdf, cell_coords = generate_point_distribution(coords, 4, "uniform")
 
     n_cells = len(MINI_LATS) * len(MINI_LONS)
     assert len(cell_coords) == n_cells
@@ -167,7 +167,7 @@ def test_generate_point_distribution_centered_cell_count():
 def test_generate_point_distribution_top_left_has_one_fewer_cell_per_axis():
     """A top-left grid treats coordinates as edges, so there is one cell fewer."""
     coords = mini_coordinates("top-left")
-    point_gdf, cell_coords = generate_point_distribution(None, coords, 4, "uniform")
+    point_gdf, cell_coords = generate_point_distribution(coords, 4, "uniform")
 
     n_cells = (len(MINI_LATS) - 1) * (len(MINI_LONS) - 1)
     assert len(cell_coords) == n_cells
@@ -177,7 +177,7 @@ def test_generate_point_distribution_top_left_has_one_fewer_cell_per_axis():
 def test_generate_point_distribution_maps_cells_to_their_coordinates():
     """``cell_coords`` is what turns a cell index back into the CSV's lat/lon."""
     coords = mini_coordinates("centered")
-    _, cell_coords = generate_point_distribution(None, coords, 1, "uniform")
+    _, cell_coords = generate_point_distribution(coords, 1, "uniform")
 
     assert cell_coords[(0, 0)] == (MINI_LATS[0], MINI_LONS[0])
     assert cell_coords[(3, 5)] == (MINI_LATS[3], MINI_LONS[5])
@@ -185,7 +185,7 @@ def test_generate_point_distribution_maps_cells_to_their_coordinates():
 
 def test_generate_point_distribution_points_fall_in_their_own_cell():
     coords = mini_coordinates("centered")
-    point_gdf, _ = generate_point_distribution(None, coords, 9, "uniform")
+    point_gdf, _ = generate_point_distribution(coords, 9, "uniform")
 
     for (i, j), group in point_gdf.groupby("cell"):
         lo_x, lo_y, hi_x, hi_y = cell_bounds(i, j, coords)
@@ -193,28 +193,15 @@ def test_generate_point_distribution_points_fall_in_their_own_cell():
         assert group.geometry.y.between(lo_y, hi_y).all()
 
 
-def test_generate_point_distribution_skips_masked_cells():
-    """A land-sea mask must remove exactly the cells it marks as non-land."""
-    coords = mini_coordinates("centered")
-    mask = np.zeros((len(MINI_LATS), len(MINI_LONS)))
-    mask[0, 0] = 1
-    mask[2, 3] = 1
-
-    point_gdf, cell_coords = generate_point_distribution(mask, coords, 4, "uniform")
-
-    assert set(cell_coords) == {(0, 0), (2, 3)}
-    assert len(point_gdf) == 2 * 4
-
-
 def test_generate_point_distribution_rejects_unknown_distribution():
     coords = mini_coordinates("centered")
     with pytest.raises(ValueError, match="Unknown point distribution"):
-        generate_point_distribution(None, coords, 4, "gaussian")
+        generate_point_distribution(coords, 4, "gaussian")
 
 
 def test_generate_point_distribution_returns_geodataframe_in_wgs84():
     coords = mini_coordinates("centered")
-    point_gdf, _ = generate_point_distribution(None, coords, 4, "uniform")
+    point_gdf, _ = generate_point_distribution(coords, 4, "uniform")
 
     assert point_gdf.crs == "EPSG:4326"
     assert isinstance(point_gdf.geometry.iloc[0], Point)

@@ -1,4 +1,4 @@
-"""Tests for reading the template grid and the optional land-sea mask."""
+"""Tests for reading the template grid."""
 
 import os
 
@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from factories import MINI_LATS, MINI_LONS, make_grid_nc
-from netcdf2region.compute_grid_weights import load_land_sea_mask, load_template_grid
+from netcdf2region.data_handling import load_template_grid
 
 
 def _load(path, origin="centered", shift=False):
@@ -140,80 +140,3 @@ def test_unsorted_longitudes_are_rejected(tmp_path):
 def test_invalid_coordinate_origin_is_rejected(tmp_path):
     with pytest.raises(ValueError, match="Invalid coordinate origin"):
         _load(make_grid_nc(tmp_path / "g.nc"), origin="bottom-right")
-
-
-# --------------------------------------------------------------------------- #
-# load_land_sea_mask
-# --------------------------------------------------------------------------- #
-
-def _coords_for(lats, lons):
-    return {
-        "lat": np.asarray(lats),
-        "lon": np.asarray(lons),
-        "lat_res": 1.0,
-        "lon_res": 1.0,
-        "coordinate_origin": "centered",
-    }
-
-
-def test_mask_is_read_and_matched_against_the_grid(tmp_path):
-    values = np.zeros((len(MINI_LATS), len(MINI_LONS)))
-    values[0, 0] = 1
-    path = make_grid_nc(tmp_path / "m.nc", var="lsm", values=values)
-
-    mask = load_land_sea_mask(path, _coords_for(MINI_LATS, MINI_LONS), yes=True)
-
-    assert mask.shape == (len(MINI_LATS), len(MINI_LONS))
-
-
-def test_mask_is_dilated_so_coastal_cells_are_kept(tmp_path):
-    """A ``maximum_filter`` of size 10 grows every land cell by ~5 cells.
-
-    Without the dilation, a coarse mask clips regions that only touch the edge of
-    a land cell.
-    """
-    lats = np.arange(0.5, 40.0, 1.0)
-    lons = np.arange(0.5, 40.0, 1.0)
-    values = np.zeros((len(lats), len(lons)))
-    values[20, 20] = 1
-    path = make_grid_nc(tmp_path / "m.nc", lats=lats, lons=lons, var="lsm", values=values)
-
-    mask = load_land_sea_mask(path, _coords_for(lats, lons), yes=True)
-
-    assert mask[20, 20] == 1
-    assert mask[18, 18] == 1, "neighbouring cells must be pulled in"
-    assert mask[35, 35] == 0, "distant cells must stay excluded"
-    assert mask.sum() > values.sum()
-
-
-def test_mask_with_wrong_shape_is_rejected(tmp_path):
-    path = make_grid_nc(
-        tmp_path / "m.nc", lats=np.arange(0.5, 3.0, 1.0), lons=np.arange(0.5, 3.0, 1.0),
-        var="lsm",
-    )
-
-    with pytest.raises(ValueError, match="does not match grid shape"):
-        load_land_sea_mask(path, _coords_for(MINI_LATS, MINI_LONS), yes=True)
-
-
-def test_mask_on_a_different_grid_is_rejected(tmp_path):
-    """A mask sharing the grid's shape but not its coordinates must be refused.
-
-    Same latitudes, longitudes shifted by 40 degrees: the two grids describe
-    completely different parts of the world, and silently accepting this would
-    assign land cells to the wrong places.
-    """
-    shifted_lons = MINI_LONS + 40.0
-    path = make_grid_nc(
-        tmp_path / "m.nc", lats=MINI_LATS, lons=shifted_lons, var="lsm"
-    )
-
-    with pytest.raises(ValueError, match="must match grid lat/lon"):
-        load_land_sea_mask(path, _coords_for(MINI_LATS, MINI_LONS), yes=True)
-
-
-def test_missing_mask_file_raises(tmp_path):
-    with pytest.raises(FileNotFoundError, match="Land-sea mask file not found"):
-        load_land_sea_mask(
-            str(tmp_path / "absent.nc"), _coords_for(MINI_LATS, MINI_LONS), yes=True
-        )

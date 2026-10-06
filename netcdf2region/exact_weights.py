@@ -23,7 +23,7 @@ import shapely
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from .compute_grid_weights import cell_bounds, load_regions, load_template_grid
+from .data_handling import cell_bounds, load_regions, load_template_grid
 
 #: Mean Earth radius (IUGG), the same value validate_weights uses for its area check.
 EARTH_RADIUS_KM = 6371.0088

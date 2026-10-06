@@ -10,7 +10,7 @@ import pytest
 from shapely.geometry import MultiPolygon, Point, box
 
 from factories import make_regions, mini_coordinates, mini_polygons
-from netcdf2region.compute_grid_weights import (
+from netcdf2region.sampled_weights import (
     assign_missing_regions,
     calc_cell_region_overlap,
     generate_point_distribution,
@@ -78,7 +78,7 @@ def test_a_point_in_two_overlapping_regions_counts_for_both():
 def test_result_is_independent_of_the_number_of_jobs():
     """Batching must not change the answer, only how fast it arrives."""
     coords = mini_coordinates()
-    point_gdf, _ = generate_point_distribution(None, coords, 25, "uniform")
+    point_gdf, _ = generate_point_distribution(coords, 25, "uniform")
     regions = _regions(mini_polygons())
 
     serial = calc_cell_region_overlap(point_gdf, regions, 25, n_jobs=1, backend="threading")
@@ -90,7 +90,7 @@ def test_result_is_independent_of_the_number_of_jobs():
 
 def test_result_is_independent_of_the_batch_count():
     coords = mini_coordinates()
-    point_gdf, _ = generate_point_distribution(None, coords, 16, "uniform")
+    point_gdf, _ = generate_point_distribution(coords, 16, "uniform")
     regions = _regions(mini_polygons())
 
     few = calc_cell_region_overlap(

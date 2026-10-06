@@ -15,11 +15,8 @@ import os
 import numpy as np
 import pytest
 
-from netcdf2region.compute_grid_weights import (
-    compute_overlap,
-    load_regions,
-    load_template_grid,
-)
+from netcdf2region.data_handling import load_regions, load_template_grid
+from netcdf2region.sampled_weights import compute_overlap
 from netcdf2region.netcdf2region import precalc_weights_path
 from netcdf2region.validate_weights import validate_weights
 
@@ -229,7 +226,7 @@ def test_end_to_end_on_real_data_cropped(tmp_path, cluster_paths):
     out = tmp_path / "weights.csv"
     compute_overlap(
         netcdf_path=grid, shapefile_path=shapefile, output_csv=str(out),
-        points_per_cell=25, simplify=False, mask_nc_path=None, shapefile_layer=None,
+        points_per_cell=25, simplify=False, shapefile_layer=None,
         point_distribution="uniform", backend="threading", n_jobs=4, yes=True,
         coordinate_origin="centered", default_gid="region_id", shift_longitudes=False,
     )

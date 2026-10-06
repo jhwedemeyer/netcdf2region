@@ -4,7 +4,7 @@
 Every fixture here is derived deterministically from code in ``tests/factories.py``
 or from the shipped weights in ``netcdf2region/data/``. Committing them rather than
 building them at test time is what makes ``golden_mini_weights.csv`` a regression
-guard: if a change to ``compute_grid_weights.py`` alters the numbers, the test
+guard: if a change to ``sampled_weights.py`` alters the numbers, the test
 fails instead of quietly regenerating a new "expected" answer.
 
 Usage::
@@ -39,7 +39,7 @@ from factories import (  # noqa: E402
     mini_polygons,
     write_regions,
 )
-from netcdf2region.compute_grid_weights import compute_overlap  # noqa: E402
+from netcdf2region.sampled_weights import compute_overlap  # noqa: E402
 
 MINI_GRID_NC = os.path.join(HERE, "mini_grid.nc")
 MINI_REGIONS = os.path.join(HERE, "mini_regions.geojson")
@@ -83,7 +83,7 @@ def build_golden_weights():
         output_csv=GOLDEN_WEIGHTS,
         points_per_cell=MINI_POINTS_PER_CELL,
         simplify=False,
-        mask_nc_path=None,
+       
         shapefile_layer=None,
         point_distribution="uniform",
         backend="threading",

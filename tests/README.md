@@ -18,7 +18,7 @@ and adds about a second.
 | File | Covers |
 |---|---|
 | `test_geometry.py` | `uniform_points_in_cell`, `random_points_in_cell`, `cell_bounds`, `generate_point_distribution` |
-| `test_grid_loading.py` | `load_template_grid` (incl. `--shift_longitudes`, naming variants, every error path), `load_land_sea_mask` |
+| `test_grid_loading.py` | `load_template_grid` (incl. `--shift_longitudes`, naming variants, every error path) |
 | `test_overlap.py` | `calc_cell_region_overlap`, `assign_missing_regions` (the small-region rescue path) |
 | `test_compute_overlap.py` | the whole pipeline end to end, `load_regions`, the `compute_grid_weights` CLI, and the golden regression check |
 | `test_validate_weights.py` | every rule in `netcdf2region/validate_weights.py`, plus its CLI and exit codes |

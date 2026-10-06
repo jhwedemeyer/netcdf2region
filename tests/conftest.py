@@ -128,7 +128,7 @@ def mini_weights_csv(tmp_path_factory, mini_grid_nc, mini_regions_geojson):
     Distinct from ``golden_weights_path``: this is computed fresh during the test
     session, so comparing the two is what detects a behaviour change.
     """
-    from netcdf2region.compute_grid_weights import compute_overlap
+    from netcdf2region.sampled_weights import compute_overlap
 
     out = tmp_path_factory.mktemp("mini") / "weights.csv"
     compute_overlap(
@@ -137,7 +137,7 @@ def mini_weights_csv(tmp_path_factory, mini_grid_nc, mini_regions_geojson):
         output_csv=str(out),
         points_per_cell=MINI_POINTS_PER_CELL,
         simplify=False,
-        mask_nc_path=None,
+       
         shapefile_layer=None,
         point_distribution="uniform",
         backend="threading",
@@ -159,7 +159,7 @@ def cluster_paths():
 @pytest.fixture(scope="session")
 def gadm_regions():
     """GADM admin1 regions from the cluster, loaded once per session."""
-    from netcdf2region.compute_grid_weights import load_regions
+    from netcdf2region.data_handling import load_regions
 
     path = CLUSTER_PATHS["gadm"]
     if not os.path.exists(path):

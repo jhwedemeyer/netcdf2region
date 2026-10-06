@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from netcdf2region.compute_grid_weights import (
+from netcdf2region.data_handling import (
     cell_bounds,
     load_regions,
     load_template_grid,
@@ -366,8 +366,7 @@ def _check_region_areas(df, regions, coordinates, area_rtol):
 
     Regions whose area the weights cannot express - above all anything small enough
     to sit inside a single grid cell - are skipped and reported instead of counted;
-    see ``skip_reasons`` below. Two biases remain invisible here: weights computed
-    with a land-sea mask make coastal regions look too small, and a region stored
+    see ``skip_reasons`` below. One bias remains invisible here: a region stored
     unsplit across +/-180 has a meaningless bounding box.
     """
     if regions is None or coordinates is None:
@@ -518,7 +517,7 @@ def validate_weights(
     Args:
         weights: Path to a weights CSV, or a DataFrame with the weights columns.
         coordinates: Optional grid description from
-            :func:`~netcdf2region.compute_grid_weights.load_template_grid`.
+            :func:`~netcdf2region.data_handling.load_template_grid`.
             Enables the on-grid coordinate check.
         regions: Optional GeoDataFrame (with a ``region_id`` column) or path to a
             shapefile. Enables the region coverage and area checks.

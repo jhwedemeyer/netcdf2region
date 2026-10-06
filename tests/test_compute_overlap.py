@@ -19,7 +19,8 @@ from factories import (
     mini_polygons,
     write_regions,
 )
-from netcdf2region.compute_grid_weights import compute_overlap, load_regions
+from netcdf2region.data_handling import load_regions
+from netcdf2region.sampled_weights import compute_overlap
 from netcdf2region.validate_weights import validate_weights
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,7 +34,7 @@ def _run(netcdf, shapefile, output, **overrides):
         output_csv=str(output),
         points_per_cell=MINI_POINTS_PER_CELL,
         simplify=False,
-        mask_nc_path=None,
+       
         shapefile_layer=None,
         point_distribution="uniform",
         backend="threading",
@@ -182,39 +183,6 @@ def test_top_left_origin_offsets_the_cells(tmp_path, mini_grid_nc):
     assert df.iloc[0]["percent_overlap"] == 1.0
 
 
-def test_masked_cells_are_not_sampled_but_regions_are_still_rescued(tmp_path):
-    """A land-sea mask removes cells from sampling, never regions from the output.
-
-    ``assign_missing_regions`` works on true geometry, so a region sitting entirely
-    in masked-out water still gets a weight rather than disappearing.
-    """
-    lats = np.arange(0.5, 40.0, 1.0)
-    lons = np.arange(0.5, 40.0, 1.0)
-    grid = make_grid_nc(tmp_path / "g.nc", lats=lats, lons=lons)
-
-    mask_values = np.zeros((len(lats), len(lons)))
-    mask_values[5, 5] = 1
-    mask = make_grid_nc(
-        tmp_path / "m.nc", lats=lats, lons=lons, var="lsm", values=mask_values
-    )
-
-    regions = make_regions({
-        "OnLand": box(5.0, 5.0, 6.0, 6.0),
-        "AtSea": box(30.0, 30.0, 31.0, 31.0),
-    })
-    shapefile = write_regions(regions, tmp_path / "r.geojson")
-
-    df = _run(
-        grid, shapefile, tmp_path / "w.csv",
-        mask_nc_path=mask, points_per_cell=4,
-    )
-
-    assert set(df["region_id"]) == {"OnLand", "AtSea"}
-    at_sea = df[df["region_id"] == "AtSea"].iloc[0]
-    assert (at_sea["lat"], at_sea["lon"]) == (30.5, 30.5)
-    assert at_sea["percent_overlap"] == 1.0
-
-
 def test_random_distribution_produces_valid_weights(tmp_path, mini_grid_nc, mini_regions_geojson):
     """Random sampling is not reproducible, so only invariants are asserted."""
     np.random.seed(7)
@@ -316,7 +284,7 @@ def test_cli_writes_the_same_output_as_the_api(tmp_path, mini_grid_nc,
     out = tmp_path / "cli.csv"
     result = _cli(
         mini_grid_nc, mini_regions_geojson, str(out),
-        "--yes", "--n_jobs=1", f"--points_per_cell={MINI_POINTS_PER_CELL}",
+        "--yes", "--n_jobs=1", "--method=sampling", f"--points_per_cell={MINI_POINTS_PER_CELL}",
     )
 
     assert result.returncode == 0, result.stderr
