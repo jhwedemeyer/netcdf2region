@@ -59,7 +59,7 @@ python tests/data/make_fixtures.py --check    # verify byte-identical
 deterministic, so a fresh `compute_weights(method="sampling")` run must reproduce it byte for byte.
 If it changes, something about sampling, rounding, or the rescue path changed.
 
-`shipped_slice_ISIMIP_DOSE.csv` is a 53-row cut of complete regions from
+`shipped_slice_ISIMIP_DOSE.csv` is a small cut of complete regions from
 `ISIMIP_to_DOSE_admin1_weights.csv`, and `shipped_stats.json` records summary
 statistics for all six shipped files. Both turn a regeneration of the shipped
 weights into a readable diff rather than an opaque failure.
@@ -67,19 +67,17 @@ weights into a readable diff rather than an opaque failure.
 ## Two properties worth knowing before you change a test
 
 **Per-cell weights do not have to sum to 1.** `ERA5_to_DOSE_admin1_weights.csv`
-has 13 689 cells above 1.0, peaking at exactly 2.00: DOSE polygons overlap, and
+has 13 697 cells above 1.01, peaking at 2.03: DOSE polygons overlap, and
 cell (24.75, -14.25) is claimed in full by both `ESH.1_1` (Western Sahara) and
 `MAR.26_1`. `validate_weights` therefore treats the cell sum as a *warning* with a
 configurable ceiling. It also means `--correct-weights` scales those cells **down**.
 
-**The shipped weights predate the small-region fix.** All six files have
-`min(percent_overlap) == 0.01` and no rows with more than 2 decimals, so they
-contain no `assign_missing_regions` output at all — they were generated in August
-2025, before that code existed. `test_shipped_files_still_predate_the_small_region_fix`
-documents this and will fail once `netcdf2region/precalc_weights/*.sh` is rerun.
-At that point:
+**The shipped weights are exact.** All six files were computed with
+`--method exact` (October 2026) and carry `cell_area_km2`;
+`test_shipped_files_are_exact_weights` guards that. After rerunning
+`netcdf2region/precalc_weights/*.sh`:
 
-1. delete that test,
-2. rerun `python tests/data/make_fixtures.py`,
-3. run `pytest -m cluster` — `test_shipped_weights_cover_every_region` is the
-   acceptance gate, and currently fails on the shipped files by design.
+1. rerun `python tests/data/make_fixtures.py` and review the diff of
+   `shipped_stats.json` and the slice,
+2. run `pytest -m cluster` on the cluster — `test_shipped_weights_cover_every_region`
+   is the acceptance gate.

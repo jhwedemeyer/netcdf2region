@@ -1,62 +1,56 @@
 {
   "ERA5_to_DOSE_admin1_weights.csv": {
-    "max_cell_sum": 2.0,
+    "max_cell_sum": 2.03134124,
     "max_weight": 1.0,
-    "min_weight": 0.01,
-    "n_cells": 262430,
-    "n_cells_over_one": 13689,
-    "n_regions": 3391,
-    "n_rescued_rows": 0,
-    "n_rows": 326584
+    "min_weight": 1.2480717e-09,
+    "n_cells": 265744,
+    "n_cells_over_one": 13697,
+    "n_regions": 3443,
+    "n_rows": 336148
   },
   "ERA5_to_GADM36_admin0_weights.csv": {
-    "max_cell_sum": 1.0,
+    "max_cell_sum": 1.00011324156,
     "max_weight": 1.0,
-    "min_weight": 0.01,
-    "n_cells": 362055,
+    "min_weight": 1.6726968e-08,
+    "n_cells": 367342,
     "n_cells_over_one": 0,
-    "n_regions": 251,
-    "n_rescued_rows": 0,
-    "n_rows": 372057
+    "n_regions": 256,
+    "n_rows": 378538
   },
   "ERA5_to_GADM36_admin1_weights.csv": {
-    "max_cell_sum": 1.02,
+    "max_cell_sum": 1.0001132373700001,
     "max_weight": 1.0,
-    "min_weight": 0.01,
-    "n_cells": 262439,
-    "n_cells_over_one": 1,
-    "n_regions": 3556,
-    "n_rescued_rows": 0,
-    "n_rows": 310866
+    "min_weight": 1.2480717e-09,
+    "n_cells": 265752,
+    "n_cells_over_one": 0,
+    "n_regions": 3610,
+    "n_rows": 320156
   },
   "ISIMIP_to_DOSE_admin1_weights.csv": {
-    "max_cell_sum": 2.0,
+    "max_cell_sum": 2.01534625,
     "max_weight": 1.0,
-    "min_weight": 0.01,
-    "n_cells": 68324,
-    "n_cells_over_one": 3437,
-    "n_regions": 3306,
-    "n_rescued_rows": 0,
-    "n_rows": 96011
+    "min_weight": 1.324135e-09,
+    "n_cells": 70037,
+    "n_cells_over_one": 3446,
+    "n_regions": 3443,
+    "n_rows": 102465
   },
   "ISIMIP_to_GADM36_admin0_weights.csv": {
-    "max_cell_sum": 1.0,
+    "max_cell_sum": 1.000028310389,
     "max_weight": 1.0,
-    "min_weight": 0.01,
-    "n_cells": 93198,
+    "min_weight": 1.5628503e-09,
+    "n_cells": 95916,
     "n_cells_over_one": 0,
-    "n_regions": 248,
-    "n_rescued_rows": 0,
-    "n_rows": 97826
+    "n_regions": 256,
+    "n_rows": 101480
   },
   "ISIMIP_to_GADM36_admin1_weights.csv": {
-    "max_cell_sum": 1.0000000000000002,
+    "max_cell_sum": 1.0000285403440001,
     "max_weight": 1.0,
-    "min_weight": 0.01,
-    "n_cells": 68325,
+    "min_weight": 1.324135e-09,
+    "n_cells": 70041,
     "n_cells_over_one": 0,
-    "n_regions": 3464,
-    "n_rescued_rows": 0,
-    "n_rows": 91870
+    "n_regions": 3610,
+    "n_rows": 98266
   }
 }

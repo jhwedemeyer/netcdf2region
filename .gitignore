@@ -95,3 +95,5 @@ paper/related_literature/
 paper/benchmark/work/
 
 paper/*
+# Local backups of regenerated weights
+backup/

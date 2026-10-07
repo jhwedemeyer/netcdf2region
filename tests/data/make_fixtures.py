@@ -149,7 +149,6 @@ def _stats_for(path):
         "max_weight": float(df["percent_overlap"].max()),
         "max_cell_sum": float(cell_sums.max()),
         "n_cells_over_one": int((cell_sums > 1.01).sum()),
-        "n_rescued_rows": int((df["percent_overlap"].round(2) != df["percent_overlap"]).sum()),
     }
 
 

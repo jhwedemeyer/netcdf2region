@@ -80,7 +80,7 @@ def test_precalc_weights_path_resolves_shipped_data():
 
     assert os.path.exists(str(path))
     assert list(pd.read_csv(path).columns) == [
-        "lat", "lon", "region_id", "percent_overlap"
+        "lat", "lon", "region_id", "percent_overlap", "cell_area_km2"
     ]
 
 

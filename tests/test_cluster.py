@@ -5,9 +5,8 @@ Skipped automatically off-cluster (see ``pytest_collection_modifyitems`` in
 
     python -m pytest tests -m cluster -v
 
-They are the acceptance gate for regenerated weights: the coverage check below
-fails on the currently shipped files, because those predate
-``assign_missing_regions``, and must pass on freshly computed ones.
+They are the acceptance gate for regenerated weights: the shipped files must
+cover every region of the shapefile they were computed from.
 """
 
 import os
@@ -24,14 +23,15 @@ from netcdf2region.validate_weights import validate_weights
 pytestmark = pytest.mark.cluster
 
 #: Which template grid and shapefile each shipped weights file was built from,
-#: mirroring netcdf2region/precalc_weights/*.sh.
+#: mirroring netcdf2region/precalc_weights/*.sh:
+#: (grid, shapefile, layer, region id column, shift longitudes).
 WEIGHTS_PROVENANCE = {
-    "ERA5_to_DOSE_admin1_weights.csv": ("era5", "dose", None, True),
-    "ERA5_to_GADM36_admin0_weights.csv": ("era5", "gadm", 0, True),
-    "ERA5_to_GADM36_admin1_weights.csv": ("era5", "gadm", 1, True),
-    "ISIMIP_to_DOSE_admin1_weights.csv": ("isimip", "dose", None, False),
-    "ISIMIP_to_GADM36_admin0_weights.csv": ("isimip", "gadm", 0, False),
-    "ISIMIP_to_GADM36_admin1_weights.csv": ("isimip", "gadm", 1, False),
+    "ERA5_to_DOSE_admin1_weights.csv": ("era5", "dose", None, "GID_1", True),
+    "ERA5_to_GADM36_admin0_weights.csv": ("era5", "gadm", 0, "GID_0", True),
+    "ERA5_to_GADM36_admin1_weights.csv": ("era5", "gadm", 1, "GID_1", True),
+    "ISIMIP_to_DOSE_admin1_weights.csv": ("isimip", "dose", None, "GID_1", False),
+    "ISIMIP_to_GADM36_admin0_weights.csv": ("isimip", "gadm", 0, "GID_0", False),
+    "ISIMIP_to_GADM36_admin1_weights.csv": ("isimip", "gadm", 1, "GID_1", False),
 }
 
 
@@ -46,20 +46,20 @@ def _require(path):
 # --------------------------------------------------------------------------- #
 
 def test_era5_grid_is_quarter_degree_after_shifting(cluster_paths):
-    coords = load_template_grid(
+    grid = load_template_grid(
         _require(cluster_paths["era5"]), coordinate_origin="centered", shift_longitudes=True
     )
 
-    assert np.isclose(coords.lat_res, 0.25)
-    assert np.isclose(coords["lon_res"], 0.25)
-    assert coords["lon"].min() >= -180
-    assert coords["lon"].max() <= 180
-    assert np.all(np.diff(coords["lon"]) > 0)
+    assert np.isclose(grid.lat_res, 0.25)
+    assert np.isclose(grid.lon_res, 0.25)
+    assert grid.lon.min() >= -180
+    assert grid.lon.max() <= 180
+    assert np.all(np.diff(grid.lon) > 0)
 
 
 def test_era5_grid_is_rejected_without_the_shift_flag(cluster_paths):
     """Confirms the ERA5 scripts genuinely need --shift-longitudes."""
-    with pytest.raises(ValueError, match="shift_longitudes"):
+    with pytest.raises(ValueError, match="shift-longitudes"):
         load_template_grid(
             _require(cluster_paths["era5"]),
             coordinate_origin="centered", shift_longitudes=False,
@@ -68,12 +68,12 @@ def test_era5_grid_is_rejected_without_the_shift_flag(cluster_paths):
 
 def test_isimip_grid_is_half_degree_without_shifting(cluster_paths):
     """Confirms the ISIMIP scripts are right to omit --shift-longitudes."""
-    coords = load_template_grid(
+    grid = load_template_grid(
         _require(cluster_paths["isimip"]), coordinate_origin="centered", shift_longitudes=False
     )
 
-    assert np.isclose(coords.lat_res, 0.5)
-    assert np.isclose(coords["lon_res"], 0.5)
+    assert np.isclose(grid.lat_res, 0.5)
+    assert np.isclose(grid.lon_res, 0.5)
 
 
 def test_dose_shapefile_provides_gid_1(cluster_paths):
@@ -93,7 +93,7 @@ def test_dose_shapefile_provides_gid_1(cluster_paths):
 def test_gadm_layers_load(cluster_paths, layer, expected_gid):
     regions = load_regions(
         _require(cluster_paths["gadm"]), simplify=False, shapefile_layer=layer,
-        default_gid="GID_1",
+        default_gid=expected_gid,
     )
 
     assert "region_id" in regions.columns
@@ -122,7 +122,7 @@ def test_dose_regions_genuinely_overlap(cluster_paths):
 @pytest.mark.parametrize("name", sorted(WEIGHTS_PROVENANCE))
 def test_shipped_weights_sit_on_their_template_grid(name, cluster_paths):
     """Every coordinate must exist in the grid, or ``aggregate`` cannot use it."""
-    grid_key, _, _, shift = WEIGHTS_PROVENANCE[name]
+    grid_key, _, _, _, shift = WEIGHTS_PROVENANCE[name]
     coords = load_template_grid(
         _require(cluster_paths[grid_key]), coordinate_origin="centered", shift_longitudes=shift
     )
@@ -136,16 +136,11 @@ def test_shipped_weights_sit_on_their_template_grid(name, cluster_paths):
 
 @pytest.mark.parametrize("name", sorted(WEIGHTS_PROVENANCE))
 def test_shipped_weights_cover_every_region(name, cluster_paths):
-    """The acceptance gate for regenerated weights.
-
-    Expected to FAIL on the files shipped today: they were produced before
-    ``assign_missing_regions`` existed, so regions smaller than the sampling
-    spacing are missing. After rerunning precalc_weights/*.sh this must pass.
-    """
-    _, shape_key, layer, _ = WEIGHTS_PROVENANCE[name]
+    """The acceptance gate for regenerated weights: no region may be missing."""
+    _, shape_key, layer, gid, _ = WEIGHTS_PROVENANCE[name]
     regions = load_regions(
         _require(cluster_paths[shape_key]), simplify=False, shapefile_layer=layer,
-        default_gid="GID_1",
+        default_gid=gid,
     )
 
     report = validate_weights(
@@ -155,20 +150,20 @@ def test_shipped_weights_cover_every_region(name, cluster_paths):
 
     assert coverage.passed, (
         f"{name}: {coverage.message}\n"
-        f"Rerun netcdf2region/precalc_weights/ to regenerate with the small-region fix."
+        f"Rerun netcdf2region/precalc_weights/ to regenerate the weights."
     )
 
 
 @pytest.mark.parametrize("name", sorted(WEIGHTS_PROVENANCE))
 def test_shipped_weights_reconstruct_region_areas(name, cluster_paths):
     """Weighted cell areas should add up to each region's true area."""
-    grid_key, shape_key, layer, shift = WEIGHTS_PROVENANCE[name]
+    grid_key, shape_key, layer, gid, shift = WEIGHTS_PROVENANCE[name]
     coords = load_template_grid(
         _require(cluster_paths[grid_key]), coordinate_origin="centered", shift_longitudes=shift
     )
     regions = load_regions(
         _require(cluster_paths[shape_key]), simplify=False, shapefile_layer=layer,
-        default_gid="GID_1",
+        default_gid=gid,
     )
 
     report = validate_weights(
@@ -186,7 +181,8 @@ def test_shipped_weights_reconstruct_region_areas(name, cluster_paths):
 # A real end-to-end run, cropped to stay fast
 # --------------------------------------------------------------------------- #
 
-def test_end_to_end_on_real_data_cropped(tmp_path, cluster_paths):
+@pytest.mark.parametrize("method", ["exact", "sampling"])
+def test_end_to_end_on_real_data_cropped(tmp_path, cluster_paths, method):
     """Run the real pipeline on real geometry, cropped to a few hundred cells.
 
     Synthetic fixtures use clean rectangles; this exercises the messy parts of a
@@ -226,7 +222,7 @@ def test_end_to_end_on_real_data_cropped(tmp_path, cluster_paths):
 
     out = tmp_path / "weights.csv"
     compute_weights(
-        grid, shapefile, str(out), method="sampling",
+        grid, shapefile, str(out), method=method,
         points_per_cell=25, n_jobs=4, gid="region_id",
     )
 
