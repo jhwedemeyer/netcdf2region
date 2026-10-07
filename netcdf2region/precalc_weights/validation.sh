@@ -19,7 +19,7 @@ WEIGHTS_OUTPUT="data/ERA5_to_DOSE_admin1_weights.csv"
 validate_weights "$WEIGHTS_OUTPUT" \
     --netcdf "$NETCDF_GRID" \
     --shapefile "$SHAPEFILE" \
-    --shift_longitudes \
+    --shift-longitudes \
     --max-cell-sum 2.0
 
 
@@ -29,8 +29,8 @@ WEIGHTS_OUTPUT="data/ERA5_to_GADM36_admin0_weights.csv"
 validate_weights "$WEIGHTS_OUTPUT" \
     --netcdf "$NETCDF_GRID" \
     --shapefile "$SHAPEFILE" \
-    --shapefile_layer=$SHAPEFILE_LAYER \
-    --shift_longitudes \
+    --shapefile-layer=$SHAPEFILE_LAYER \
+    --shift-longitudes \
     --max-cell-sum 1.03
 
 SHAPEFILE_LAYER=1
@@ -38,8 +38,8 @@ WEIGHTS_OUTPUT="data/ERA5_to_GADM36_admin1_weights.csv"
 validate_weights "$WEIGHTS_OUTPUT" \
     --netcdf "$NETCDF_GRID" \
     --shapefile "$SHAPEFILE" \
-    --shapefile_layer=$SHAPEFILE_LAYER \
-    --shift_longitudes \
+    --shapefile-layer=$SHAPEFILE_LAYER \
+    --shift-longitudes \
     --max-cell-sum 1.03
 
 # Testing isimip grids
@@ -58,7 +58,7 @@ WEIGHTS_OUTPUT="data/ISIMIP_to_GADM36_admin0_weights.csv"
 validate_weights "$WEIGHTS_OUTPUT" \
     --netcdf "$NETCDF_GRID" \
     --shapefile "$SHAPEFILE" \
-    --shapefile_layer=$SHAPEFILE_LAYER \
+    --shapefile-layer=$SHAPEFILE_LAYER \
     --max-cell-sum 1.03
 
 SHAPEFILE_LAYER=1
@@ -66,5 +66,5 @@ WEIGHTS_OUTPUT="data/ISIMIP_to_GADM36_admin1_weights.csv"
 validate_weights "$WEIGHTS_OUTPUT" \
     --netcdf "$NETCDF_GRID" \
     --shapefile "$SHAPEFILE" \
-    --shapefile_layer=$SHAPEFILE_LAYER \
+    --shapefile-layer=$SHAPEFILE_LAYER \
     --max-cell-sum 1.03

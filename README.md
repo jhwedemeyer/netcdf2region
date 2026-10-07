@@ -39,60 +39,73 @@ compute_grid_weights <netcdf> <shapefile> <output> [options]
 
 #### Options
 
-- `--method <exact|sampling>`: How overlaps are computed (default: exact). `exact` intersects each region with the grid cells and also writes each cell's area (`cell_area_km2`), which `netcdf2region --area_weighted` uses to compute area-weighted means and standard deviations. `sampling` estimates overlaps by sampling points in each cell.
-- `--points_per_cell <int>`: Number of points per grid cell, only with `--method sampling` (default: 100).
-- `--point_distribution <uniform|random>`: Distribution of points within grid cells, only with `--method sampling` (default: uniform)
+- `--method <exact|sampling>`: How overlaps are computed (default: exact). `exact` intersects each region with the grid cells and also writes each cell's area (`cell_area_km2`), which `netcdf2region --area-weighted` uses to compute area-weighted means and standard deviations. `sampling` estimates overlaps by sampling points in each cell.
+- `--points-per-cell <int>`: Number of points per grid cell, only with `--method sampling` (default: 100).
+- `--point-distribution <uniform|random>`: Distribution of points within grid cells, only with `--method sampling` (default: uniform)
 - `--simplify`: Simplify region geometries for faster computation.
-- `--shapefile_layer <int>`: Layer number in the shapefile to use (default: first layer).
+- `--shapefile-layer <int>`: Layer number in the shapefile to use (default: first layer).
 - `--backend <str>`: Parallel backend to use (`threading` by default).
-- `--n_jobs <int>`: Number of parallel jobs (default: 8).
-- `--coordinate_origin <str>`: Coordinate origin of the grid (default: centered).
+- `--n-jobs <int>`: Number of parallel jobs (default: 8).
+- `--coordinate-origin <str>`: Coordinate origin of the grid (default: centered).
 - `--gid <str>`: Geo identifier of the shapefile (default: GID_1)
-- `--shift_longitudes`: Shift longitudes from [0, 360] to [-180, 180]
-- `--yes`: If the `--gid` column is missing, use the shapefile's first column as region identifier.
+- `--shift-longitudes`: Shift longitudes from [0, 360] to [-180, 180]
 
 See `--help` for more details.
 
 ### 2. Aggregate NetCDF Data
-The `netcdf2region` command aggregates gridded NetCDF data over regions using precomputed grid weights, which are estimated via the `compute_grid_weights` command. The package also provides precomputed weights for common grids, such as ERA5, and shapefiles, such as GADM 3.6. These can be used directly with the `--precalc_weights` option (see the section 'Precomputed weights').
+The `netcdf2region` command aggregates gridded NetCDF data over regions using precomputed grid weights, which are estimated via the `compute_grid_weights` command. The package also provides precomputed weights for common grids, such as ERA5, and shapefiles, such as GADM 3.6. These can be used directly with the `--precalc-weights` option (see the section 'Precomputed weights').
 
 ```bash
 netcdf2region \
     --netcdf <input.nc> \
-    (--weights <weights.csv> | --precalc_weights <precalc_weights_name>) \
+    (--weights <weights.csv> | --precalc-weights <precalc_weights_name>) \
     --method <mean|sum|std> \
     --output <output.csv> \
     --var <variable_name> \
-    [--correct_weights] \
-    [--time_var <time_variable>] \
-    [--secondary_weights_var <secondary_weight_variable>] \
-    [--secondary_weights_netcdf <secondary_weights.nc>] \
-    [--allow_nan] \
-    [--exclude_nan_cells] \
-    [--fill_nans <value>] \
-    [--shift_longitudes] \
-    [--area_weighted]
+    [--correct-weights] \
+    [--time-var <time_variable>] \
+    [--secondary-weights-var <secondary_weight_variable>] \
+    [--secondary-weights-netcdf <secondary_weights.nc>] \
+    [--allow-nan] \
+    [--exclude-nan-cells] \
+    [--fill-nans <value>] \
+    [--shift-longitudes] \
+    [--area-weighted]
 ```
 
 #### Arguments
 
 - `--netcdf`: Path to the input NetCDF file.
-- `--weights`: Path to the CSV file with grid weights (`lat,lon,region_id,percent_overlap`). Mutually exclusive with `--precalc_weights`.
-- `--precalc_weights`: Name of a predefined weights file (e.g., `ERA5_to_GADM36_admin1_weights.csv`). Mutually exclusive with `--weights`.
+- `--weights`: Path to the CSV file with grid weights (`lat,lon,region_id,percent_overlap`). Mutually exclusive with `--precalc-weights`.
+- `--precalc-weights`: Name of a predefined weights file (e.g., `ERA5_to_GADM36_admin1_weights.csv`). Mutually exclusive with `--weights`.
 - `--method`: Aggregation method (`mean`, `sum`, or `std`).
 - `--output`: Path to the output CSV file.
 - `--var`: Name of the variable in the NetCDF file to aggregate.
-- `--correct_weights`: (Optional) If set, corrects weights to ensure no values are attributed to the sea.
-- `--time_var`: (Optional) Name of the time variable in the NetCDF file (if not automatically detected).
-- `--secondary_weights_var`: (Optional) Name of a secondary weight variable in the secondary NetCDF file. Must have dimensions `(lat, lon)` on the exact same grid as `--netcdf`; the run aborts if the coordinates differ, so crop or regrid the secondary file first. Values are multiplied with `percent_overlap` from the weights CSV during aggregation.
-- `--secondary_weights_netcdf`: Path to the NetCDF file containing `--secondary_weights_var`. Required when `--secondary_weights_var` is provided.
-- `--allow_nan`: (Optional) By default the command aborts if the aggregated variable (or the secondary weight variable) contains NaN values, since these silently corrupt the regional results. Set this flag to proceed anyway: a warning is printed instead, and every region that overlaps a NaN grid cell aggregates to NaN.
-- `--exclude_nan_cells`: (Optional) Implies `--allow_nan` for the aggregated variable (not for the secondary weights). Excludes grid cells that are NaN at every time step from the aggregation. Cells that are NaN at only some time steps are not affected, so regions still aggregate to NaN at those time steps unless `--fill_nans` is also set. A region whose cells are all excluded aggregates to NaN.
-- `--fill_nans <value>`: (Optional) Implies `--allow_nan` for the aggregated variable (not for the secondary weights). Replaces NaN values with `<value>` (e.g. `--fill_nans 0`) while keeping the cell's weight, so missing values no longer turn the regional aggregate into NaN. If `--exclude_nan_cells` is also given, the exclusion runs first, so only NaNs in the remaining cells are filled. Note that for `mean`/`std` this pulls the result towards the fill value at the affected cells and time steps.
-- `--shift_longitudes`: (Optional) Shift the input longitudes from `[0, 360]` to `[-180, 180]` and reorder the data accordingly. Weights files are always written in `[-180, 180]`, so a NetCDF on a `[0, 360]` grid (e.g. raw ERA5) needs this flag; without it the command aborts. Same meaning as in `compute_grid_weights`.
-- `--area_weighted`: (Optional) Weight each grid cell by the area it contributes to the region (covered fraction × cell area) instead of by the covered fraction alone. Use this for `mean`/`std` of intensive quantities (temperature, precipitation rate, ...) on regular lat/lon grids, where cells shrink towards the poles. Requires a weights file with a `cell_area_km2` column, as written by `compute_grid_weights --method exact`. Not allowed with `sum`, which should add up per-cell totals by covered fraction only.
+- `--correct-weights`: (Optional) If set, corrects weights to ensure no values are attributed to the sea.
+- `--time-var`: (Optional) Name of the time variable in the NetCDF file (if not automatically detected).
+- `--secondary-weights-var`: (Optional) Name of a secondary weight variable in the secondary NetCDF file. Must have dimensions `(lat, lon)` on the exact same grid as `--netcdf`; the run aborts if the coordinates differ, so crop or regrid the secondary file first. Values are multiplied with `percent_overlap` from the weights CSV during aggregation.
+- `--secondary-weights-netcdf`: Path to the NetCDF file containing `--secondary-weights-var`. Required when `--secondary-weights-var` is provided.
+- `--allow-nan`: (Optional) By default the command aborts if the aggregated variable (or the secondary weight variable) contains NaN values, since these silently corrupt the regional results. Set this flag to proceed anyway: a warning is printed instead, and every region that overlaps a NaN grid cell aggregates to NaN.
+- `--exclude-nan-cells`: (Optional) Implies `--allow-nan` for the aggregated variable (not for the secondary weights). Excludes grid cells that are NaN at every time step from the aggregation. Cells that are NaN at only some time steps are not affected, so regions still aggregate to NaN at those time steps unless `--fill-nans` is also set. A region whose cells are all excluded aggregates to NaN.
+- `--fill-nans <value>`: (Optional) Implies `--allow-nan` for the aggregated variable (not for the secondary weights). Replaces NaN values with `<value>` (e.g. `--fill-nans 0`) while keeping the cell's weight, so missing values no longer turn the regional aggregate into NaN. If `--exclude-nan-cells` is also given, the exclusion runs first, so only NaNs in the remaining cells are filled. Note that for `mean`/`std` this pulls the result towards the fill value at the affected cells and time steps.
+- `--shift-longitudes`: (Optional) Shift the input longitudes from `[0, 360]` to `[-180, 180]` and reorder the data accordingly. Weights files are always written in `[-180, 180]`, so a NetCDF on a `[0, 360]` grid (e.g. raw ERA5) needs this flag; without it the command aborts. Same meaning as in `compute_grid_weights`.
+- `--area-weighted`: (Optional) Weight each grid cell by the area it contributes to the region (covered fraction × cell area) instead of by the covered fraction alone. Use this for `mean`/`std` of intensive quantities (temperature, precipitation rate, ...) on regular lat/lon grids, where cells shrink towards the poles. Requires a weights file with a `cell_area_km2` column, as written by `compute_grid_weights --method exact`. Not allowed with `sum`, which should add up per-cell totals by covered fraction only.
 
 See the command-line help (`--help`) for more options and details.
+
+Options used to be spelled with underscores (e.g. `--shift_longitudes`). Those spellings still work, but are no longer shown in `--help`.
+
+### Python API
+
+The same steps are available from Python:
+
+```python
+from netcdf2region import aggregate, compute_weights, load_template_grid, validate_weights
+
+compute_weights("grid.nc", "regions.gpkg", "weights.csv", method="exact")
+validate_weights("weights.csv", grid=load_template_grid("grid.nc")).raise_if_failed()
+aggregate(netcdf="data.nc", weights="weights.csv", method="mean", output="out.csv", var="tas")
+```
 
 ## Precomputed weights
 The package provides precomputed weights for standard grids and shapefiles that can be used immediately with the `netcdf2region` command.
@@ -109,12 +122,12 @@ The package provides precomputed weights for standard grids and shapefiles that 
 
 ### Example: Using Precomputed Weights
 
-To aggregate NetCDF data using precomputed weights, specify the `--precalc_weights` option with the name of the weights file. For example, to aggregate ERA5 data over GADM 3.6 Admin 1 regions:
+To aggregate NetCDF data using precomputed weights, specify the `--precalc-weights` option with the name of the weights file. For example, to aggregate ERA5 data over GADM 3.6 Admin 1 regions:
 
 ```bash
 netcdf2region \
     --netcdf ERA5_sample.nc \
-    --precalc_weights ERA5_to_GADM36_admin1_weights.csv \
+    --precalc-weights ERA5_to_GADM36_admin1_weights.csv \
     --method mean \
     --output ERA5_admin1_mean.csv \
     --var temperature
@@ -159,7 +172,7 @@ WEIGHTS_OUTPUT="ERA5_to_GADM36_admin1_weights.csv"
 NUMBER_OF_JOBS=16 # Number of parallel jobs set to the number of CPU cores
 
 # Run the Python script
-compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --yes --shapefile_layer=$SHAPEFILE_LAYER --n_jobs=$NUMBER_OF_JOBS
+compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --shapefile-layer=$SHAPEFILE_LAYER --n-jobs=$NUMBER_OF_JOBS
 ```
 
 ## Requirements

@@ -1,4 +1,4 @@
-"""Loading and checking the weights used by ``netcdf2region``: the weights CSV (or a
+"""Preparing weights for :mod:`aggregate`: loading the weights CSV (or a
 precalculated one from the package data), optional sea correction and area weighting,
 checks against the data grid, and optional secondary weights from a NetCDF file.
 """
@@ -123,7 +123,7 @@ def check_weights_on_grid(weights_df, lats, lons, netcdf):
         if column == "lon":
             hint = (
                 "Weights are always written in the -180 to 180 convention; if your data "
-                "uses 0 to 360, re-run with --shift_longitudes. Otherwise the "
+                "uses 0 to 360, re-run with --shift-longitudes. Otherwise the "
             )
         else:
             hint = "The "

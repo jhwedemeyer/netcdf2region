@@ -1,4 +1,7 @@
-#%%
+"""Aggregating gridded NetCDF data to regions: :func:`aggregate` and the
+``netcdf2region`` command.
+"""
+
 import argparse
 import logging
 
@@ -6,8 +9,9 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
+from netcdf2region.cli import add_option, add_shift_longitudes, setup_logging
 from netcdf2region.load_grid import load_data_grid
-from netcdf2region.load_weights import (
+from netcdf2region.weights import (
     check_weights_on_grid,
     load_weights,
     precalc_weights_path,
@@ -16,6 +20,7 @@ from netcdf2region.load_weights import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 def aggregate(
     netcdf,
@@ -68,7 +73,7 @@ def aggregate(
     # If secondary weights are provided, load and validate them
     secondary_weights_data = None
     if secondary_weights_var is not None:
-        secondary_data, secondary_lats, secondary_lons, _ = load_netcdf(
+        secondary_data, secondary_lats, secondary_lons, _ = load_data_grid(
             secondary_weights_netcdf,
             secondary_weights_var,
             time_var=None,
@@ -158,6 +163,7 @@ def aggregate(
     out_df = pd.concat(results)
     out_df.to_csv(output, index=False)
 
+
 def main():
     """ Main function to parse arguments and run aggregation. """
     # Parse command-line arguments
@@ -165,64 +171,63 @@ def main():
     parser.add_argument("--netcdf", required=True, help="Input NetCDF file")
     
     weight_group = parser.add_mutually_exclusive_group(required=True)
-    weight_group.add_argument("--weights", help="CSV file with grid weights (lat,lon,region_id,percent_overlap)")
-    weight_group.add_argument("--precalc_weights", help="Name of precalculated weights (e.g., ERA5_to_GADM36_admin1_weights.csv)")
+    add_option(weight_group, "--weights", help="CSV file with grid weights (lat,lon,region_id,percent_overlap)")
+    add_option(weight_group, "--precalc-weights", legacy="--precalc_weights",
+               help="Name of precalculated weights (e.g., ERA5_to_GADM36_admin1_weights.csv)")
 
     parser.add_argument("--method", required=True, choices=["mean", "sum", "std"], help="Aggregation method")
     parser.add_argument("--output", required=True, help="Output CSV file")
     parser.add_argument("--var", required=True, help="Variable name in NetCDF to aggregate")
-    parser.add_argument("--correct_weights", action="store_true", help="Correct weights to ensure no values are attributed to the sea")
-    parser.add_argument("--time_var", default=None, help="Optional time variable name in NetCDF (if not automatically detected)")
-    parser.add_argument(
-        "--secondary_weights_var",
+    add_option(parser, "--correct-weights", legacy="--correct_weights", action="store_true",
+               help="Correct weights to ensure no values are attributed to the sea")
+    add_option(parser, "--time-var", legacy="--time_var", default=None,
+               help="Optional time variable name in NetCDF (if not automatically detected)")
+    add_option(
+        parser, "--secondary-weights-var", legacy="--secondary_weights_var",
         default=None,
         help=(
             "Optional NetCDF variable name for secondary grid weights. "
             "Must have dimensions (lat, lon) and is multiplied with overlap weights."
         ),
     )
-    parser.add_argument(
-        "--secondary_weights_netcdf",
+    add_option(
+        parser, "--secondary-weights-netcdf", legacy="--secondary_weights_netcdf",
         default=None,
         help=(
             "Optional NetCDF file path containing secondary grid weights. "
-            "Required when --secondary_weights_var is provided."
+            "Required when --secondary-weights-var is provided."
         ),
     )
-    parser.add_argument(
-        "--allow_nan",
+    add_option(
+        parser, "--allow-nan", legacy="--allow_nan",
         action="store_true",
         help=(
             "Proceed even if the NetCDF variable contains NaN values. "
             "Regions covering a NaN grid cell will aggregate to NaN."
         ),
     )
-    parser.add_argument(
-        "--exclude_nan_cells",
+    add_option(
+        parser, "--exclude-nan-cells", legacy="--exclude_nan_cells",
         action="store_true",
         help=(
             "Exclude grid cells that are NaN at every time step (e.g. ocean cells) from "
-            "the aggregation. Implies --allow_nan for the variable."
+            "the aggregation. Implies --allow-nan for the variable."
         ),
     )
-    parser.add_argument(
-        "--fill_nans",
+    add_option(
+        parser, "--fill-nans", legacy="--fill_nans",
         type=float,
         default=None,
         metavar="VALUE",
         help=(
             "Replace NaN values with VALUE while keeping the cell's weight. Runs after "
-            "--exclude_nan_cells if both are given. Biases mean/std towards VALUE. "
-            "Implies --allow_nan for the variable."
+            "--exclude-nan-cells if both are given. Biases mean/std towards VALUE. "
+            "Implies --allow-nan for the variable."
         ),
     )
-    parser.add_argument(
-        "--shift_longitudes",
-        action="store_true",
-        help="Shift NetCDF longitudes from [0, 360] to [-180, 180], as the weights use.",
-    )
-    parser.add_argument(
-        "--area_weighted",
+    add_shift_longitudes(parser)
+    add_option(
+        parser, "--area-weighted", legacy="--area_weighted",
         action="store_true",
         help=(
             "Weight grid cells by their area (covered fraction x cell area) for mean/std. "
@@ -230,12 +235,12 @@ def main():
         ),
     )
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    setup_logging()
 
     if args.secondary_weights_netcdf and not args.secondary_weights_var:
-        raise ValueError("--secondary_weights_netcdf requires --secondary_weights_var.")
+        parser.error("--secondary-weights-netcdf requires --secondary-weights-var.")
     if args.secondary_weights_var and not args.secondary_weights_netcdf:
-        raise ValueError("--secondary_weights_var requires --secondary_weights_netcdf.")
+        parser.error("--secondary-weights-var requires --secondary-weights-netcdf.")
 
     if args.precalc_weights:
         weights = precalc_weights_path(args.precalc_weights)

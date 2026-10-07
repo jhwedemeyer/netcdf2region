@@ -1,10 +1,9 @@
-"""End-to-end tests for the weight computation pipeline and its CLI."""
+"""End-to-end tests for ``compute_weights`` and the ``compute_grid_weights`` command."""
 
 import os
 import subprocess
 import sys
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
@@ -19,33 +18,22 @@ from factories import (
     mini_polygons,
     write_regions,
 )
-from netcdf2region.load_regions import load_regions
-from netcdf2region.sampled_weights import compute_overlap
+from netcdf2region.compute_grid_weights import compute_weights
 from netcdf2region.validate_weights import validate_weights
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _run(netcdf, shapefile, output, **overrides):
-    """Call ``compute_overlap`` with the mini defaults, overridable per test."""
+    """Call ``compute_weights`` with the mini sampling defaults, overridable per test."""
     kwargs = dict(
-        netcdf_path=netcdf,
-        shapefile_path=shapefile,
-        output_csv=str(output),
+        method="sampling",
         points_per_cell=MINI_POINTS_PER_CELL,
-        simplify=False,
-       
-        shapefile_layer=None,
         point_distribution="uniform",
-        backend="threading",
         n_jobs=1,
-        yes=True,
-        coordinate_origin="centered",
-        default_gid="GID_1",
-        shift_longitudes=False,
     )
     kwargs.update(overrides)
-    compute_overlap(**kwargs)
+    compute_weights(netcdf, shapefile, str(output), **kwargs)
     return pd.read_csv(str(output))
 
 
@@ -109,15 +97,15 @@ def test_no_zero_weight_rows_are_written(mini_weights_csv):
     assert (df["percent_overlap"] > 0).all()
 
 
-def test_coordinates_are_grid_coordinates(mini_weights_csv, mini_coords):
+def test_coordinates_are_grid_coordinates(mini_weights_csv, mini_template_grid):
     df = pd.read_csv(mini_weights_csv)
-    assert set(df["lat"]) <= set(np.round(mini_coords["lat"], 3))
-    assert set(df["lon"]) <= set(np.round(mini_coords["lon"], 3))
+    assert set(df["lat"]) <= set(np.round(mini_template_grid.lat, 3))
+    assert set(df["lon"]) <= set(np.round(mini_template_grid.lon, 3))
 
 
-def test_output_passes_full_validation(mini_weights_csv, mini_coords, mini_regions_gdf):
+def test_output_passes_full_validation(mini_weights_csv, mini_template_grid, mini_regions_gdf):
     report = validate_weights(
-        mini_weights_csv, coordinates=mini_coords, regions=mini_regions_gdf
+        mini_weights_csv, grid=mini_template_grid, regions=mini_regions_gdf
     )
     assert report.ok, report.summary()
 
@@ -199,82 +187,25 @@ def test_random_distribution_produces_valid_weights(tmp_path, mini_grid_nc, mini
 
 
 # --------------------------------------------------------------------------- #
-# load_regions
+# compute_weights
 # --------------------------------------------------------------------------- #
 
-def test_load_regions_renames_the_gid_column(tmp_path):
-    shapefile = write_regions(make_regions(mini_polygons()), tmp_path / "r.geojson")
+def test_exact_is_the_default_method(tmp_path, mini_grid_nc, mini_regions_geojson):
+    df = compute_weights(mini_grid_nc, mini_regions_geojson, n_jobs=1)
 
-    regions = load_regions(shapefile, False, None, "GID_1", yes=True)
-
-    assert "region_id" in regions.columns
-    assert set(regions["region_id"]) == set(mini_polygons())
+    assert "cell_area_km2" in df.columns
 
 
-def test_load_regions_falls_back_to_gid_0(tmp_path):
-    """Admin-0 shapefiles carry GID_0, and the default --gid is GID_1."""
-    regions = make_regions({"DEU": box(0, 0, 1, 1)}, gid_col="GID_0")
-    shapefile = write_regions(regions, tmp_path / "r.geojson")
+def test_output_csv_is_optional(tmp_path, mini_grid_nc, mini_regions_geojson):
+    df = compute_weights(mini_grid_nc, mini_regions_geojson, method="sampling", n_jobs=1)
 
-    loaded = load_regions(shapefile, False, None, "GID_1", yes=True)
-
-    assert list(loaded["region_id"]) == ["DEU"]
+    assert set(df["region_id"]) == set(mini_polygons())
+    assert not list(tmp_path.iterdir())
 
 
-def test_load_regions_uses_the_first_column_under_yes(tmp_path):
-    regions = make_regions({"X": box(0, 0, 1, 1)}, gid_col="my_id")
-    shapefile = write_regions(regions, tmp_path / "r.geojson")
-
-    loaded = load_regions(shapefile, False, None, "GID_1", yes=True)
-
-    assert "region_id" in loaded.columns
-    assert list(loaded["region_id"]) == ["X"]
-
-
-def test_load_regions_lists_the_columns_when_the_gid_is_missing(tmp_path):
-    """Without --yes there is no prompt: the error must name the columns to pick from."""
-    regions = make_regions({"X": box(0, 0, 1, 1)}, gid_col="my_id")
-    shapefile = write_regions(regions, tmp_path / "r.geojson")
-
-    with pytest.raises(KeyError, match="my_id"):
-        load_regions(shapefile, False, None, "GID_1")
-
-
-def test_load_regions_reprojects_to_wgs84(tmp_path):
-    """Weights are computed in degrees, so anything else must be reprojected."""
-    regions = make_regions({"R": box(0, 0, 1, 1)}).to_crs("EPSG:3857")
-    shapefile = write_regions(regions, tmp_path / "r.gpkg")
-
-    loaded = load_regions(shapefile, False, None, "GID_1", yes=True)
-
-    assert loaded.crs == "EPSG:4326"
-
-
-def test_load_regions_reads_a_named_geopackage_layer(tmp_path):
-    """GADM ships admin levels as layers, selected with --shapefile_layer."""
-    path = str(tmp_path / "multi.gpkg")
-    make_regions({"L0": box(0, 0, 1, 1)}, gid_col="GID_0").to_file(
-        path, driver="GPKG", layer="level0"
-    )
-    make_regions({"L1": box(0, 0, 1, 1)}).to_file(path, driver="GPKG", layer="level1")
-
-    level0 = load_regions(path, False, 0, "GID_1", yes=True)
-    level1 = load_regions(path, False, 1, "GID_1", yes=True)
-
-    assert list(level0["region_id"]) == ["L0"]
-    assert list(level1["region_id"]) == ["L1"]
-
-
-def test_load_regions_can_simplify_geometries(tmp_path):
-    circle = gpd.GeoSeries([box(0, 0, 1, 1).buffer(0.5)], crs="EPSG:4326").iloc[0]
-    shapefile = write_regions(make_regions({"C": circle}), tmp_path / "r.geojson")
-
-    detailed = load_regions(shapefile, False, None, "GID_1", yes=True)
-    simplified = load_regions(shapefile, True, None, "GID_1", yes=True)
-
-    n_detailed = len(detailed.geometry.iloc[0].exterior.coords)
-    n_simplified = len(simplified.geometry.iloc[0].exterior.coords)
-    assert n_simplified < n_detailed
+def test_unknown_method_is_rejected(mini_grid_nc, mini_regions_geojson):
+    with pytest.raises(ValueError, match="Unknown method"):
+        compute_weights(mini_grid_nc, mini_regions_geojson, method="guess")
 
 
 # --------------------------------------------------------------------------- #
@@ -293,7 +224,7 @@ def test_cli_writes_the_same_output_as_the_api(tmp_path, mini_grid_nc,
     out = tmp_path / "cli.csv"
     result = _cli(
         mini_grid_nc, mini_regions_geojson, str(out),
-        "--yes", "--n_jobs=1", "--method=sampling", f"--points_per_cell={MINI_POINTS_PER_CELL}",
+        "--n-jobs=1", "--method=sampling", f"--points-per-cell={MINI_POINTS_PER_CELL}",
     )
 
     assert result.returncode == 0, result.stderr
@@ -304,10 +235,10 @@ def test_cli_writes_the_same_output_as_the_api(tmp_path, mini_grid_nc,
 def test_cli_rejects_a_360_grid_without_the_shift_flag(tmp_path, mini_regions_geojson):
     grid = make_grid_nc(tmp_path / "g.nc", lons=np.arange(0.5, 360.0, 1.0))
 
-    result = _cli(grid, mini_regions_geojson, str(tmp_path / "o.csv"), "--yes")
+    result = _cli(grid, mini_regions_geojson, str(tmp_path / "o.csv"))
 
     assert result.returncode != 0
-    assert "shift_longitudes" in result.stderr
+    assert "shift-longitudes" in result.stderr
 
 
 def test_cli_accepts_a_geopackage_layer(tmp_path, mini_grid_nc):
@@ -318,7 +249,7 @@ def test_cli_accepts_a_geopackage_layer(tmp_path, mini_grid_nc):
     out = tmp_path / "o.csv"
 
     result = _cli(
-        mini_grid_nc, path, str(out), "--yes", "--shapefile_layer=0", "--n_jobs=1",
+        mini_grid_nc, path, str(out), "--shapefile-layer=0", "--gid=GID_0", "--n-jobs=1",
     )
 
     assert result.returncode == 0, result.stderr
@@ -327,8 +258,22 @@ def test_cli_accepts_a_geopackage_layer(tmp_path, mini_grid_nc):
 
 def test_cli_reports_a_missing_netcdf(tmp_path, mini_regions_geojson):
     result = _cli(
-        str(tmp_path / "absent.nc"), mini_regions_geojson, str(tmp_path / "o.csv"), "--yes"
+        str(tmp_path / "absent.nc"), mini_regions_geojson, str(tmp_path / "o.csv")
     )
 
     assert result.returncode != 0
     assert "NetCDF file not found" in result.stderr
+
+
+def test_cli_accepts_the_old_underscore_spellings(tmp_path, mini_grid_nc,
+                                                  mini_regions_geojson, golden_weights_path):
+    """Options were spelled with underscores before; existing scripts must keep working."""
+    out = tmp_path / "cli.csv"
+    result = _cli(
+        mini_grid_nc, mini_regions_geojson, str(out),
+        "--n_jobs=1", "--method=sampling", f"--points_per_cell={MINI_POINTS_PER_CELL}",
+    )
+
+    assert result.returncode == 0, result.stderr
+    with open(out) as produced, open(golden_weights_path) as golden:
+        assert produced.read() == golden.read()

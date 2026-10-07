@@ -25,38 +25,17 @@ import shapely
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from .load_grid import COORD_DECIMALS, cell_bounds, load_template_grid
-from .load_regions import load_regions
+from .load_grid import COORD_DECIMALS
 
 logger = logging.getLogger(__name__)
 
 #: Mean Earth radius (IUGG), the same value validate_weights uses for its area check.
 EARTH_RADIUS_KM = 6371.0088
 
-
-def grid_edges(coordinates):
-    """Return the lower and upper cell edges along each axis.
-
-    Returns:
-        tuple: ``(lat_lo, lat_hi, lon_lo, lon_hi)``, indexed like the grid's own
-        ``lat`` and ``lon`` axes (so ascending or descending order is preserved).
-    """
-    lats, lons = coordinates["lat"], coordinates["lon"]
-    if coordinates["coordinate_origin"] == "centered":
-        # One coordinate per cell (its centre), so there are as many cells as coordinates.
-        n_lat, n_lon = len(lats), len(lons)
-    else:  # top-left: the coordinates are cell edges
-        # N edges enclose N - 1 cells.
-        n_lat, n_lon = len(lats) - 1, len(lons) - 1
-    # The grid is regular in lon/lat, so the latitude edges depend only on the row and
-    # the longitude edges only on the column. Compute them once along each axis (with a
-    # fixed other index) instead of for every cell. cell_bounds returns
-    # (lon_lo, lat_lo, lon_hi, lat_hi), hence the column picks below.
-    rows = np.array([cell_bounds(i, 0, coordinates) for i in range(n_lat)])
-    cols = np.array([cell_bounds(0, j, coordinates) for j in range(n_lon)])
-    # Clamp to the globe: a cell centred on +-89.75 with 0.5 deg resolution ends at +-90,
-    # but rounding can push the edge marginally beyond it.
-    return (np.clip(rows[:, 1], -90, 90), np.clip(rows[:, 3], -90, 90), cols[:, 0], cols[:, 2])
+#: Covered fractions below this are dropped as floating-point noise. Neighbouring regions
+#: that share a border can leave slivers of ~1e-15 of a cell on either side of it; on a
+#: 0.25 deg grid, 1e-9 of a cell is under one square metre, so no real overlap is lost.
+MIN_FRACTION = 1e-9
 
 
 def cell_area_km2(lat_lo, lat_hi, lon_lo, lon_hi):
@@ -109,7 +88,7 @@ def region_cell_fractions(geom, lat_lo, lat_hi, lon_lo, lon_hi, fast=True):
 
     Args:
         geom: Region geometry (shapely, lon/lat).
-        lat_lo, lat_hi, lon_lo, lon_hi: Cell edges as returned by :func:`grid_edges`.
+        lat_lo, lat_hi, lon_lo, lon_hi: Cell edges as returned by :meth:`Grid.edges`.
         fast: Clip with :func:`_clip_fast` (default). The result is then checked: the
             covered cell areas must add up to the region's own area, otherwise the
             region is recomputed with plain intersections (``fast=False``).
@@ -201,15 +180,22 @@ def region_cell_fractions(geom, lat_lo, lat_hi, lon_lo, lon_hi, fast=True):
         covered = (frac * (lon_hi[c_idx] - lon_lo[c_idx]) * (lat_hi[r_idx] - lat_lo[r_idx])).sum()
         if not np.isclose(covered, shapely.area(root), rtol=1e-9, atol=1e-12):
             return region_cell_fractions(geom, lat_lo, lat_hi, lon_lo, lon_hi, fast=False)
+
+    # Drop floating-point slivers (after the area check, which needs every piece). A
+    # region so small that all its fractions are below the tolerance keeps them, so it
+    # is never lost from the weights.
+    keep = frac >= MIN_FRACTION
+    if keep.any():
+        r_idx, c_idx, frac = r_idx[keep], c_idx[keep], frac[keep]
     return r_idx, c_idx, frac
 
 
-def exact_weights(regions, coordinates, n_jobs=1, backend="threading", progress=True):
+def exact_weights(regions, grid, n_jobs=1, backend="threading", progress=True):
     """Exact overlap fractions and cell areas for every region/cell pair.
 
     Args:
         regions: GeoDataFrame with ``region_id`` and ``geometry`` (EPSG:4326).
-        coordinates: Grid description as returned by ``load_template_grid``.
+        grid: The :class:`~netcdf2region.load_grid.Grid` to compute weights for.
         n_jobs: Parallel jobs. shapely releases the GIL in its vectorised operations,
             so the default threading backend scales without copying the geometries.
         backend: joblib backend.
@@ -218,7 +204,7 @@ def exact_weights(regions, coordinates, n_jobs=1, backend="threading", progress=
     Returns:
         pandas.DataFrame: ``lat, lon, region_id, percent_overlap, cell_area_km2``.
     """
-    lat_lo, lat_hi, lon_lo, lon_hi = grid_edges(coordinates)
+    lat_lo, lat_hi, lon_lo, lon_hi = grid.edges()
 
     regions = regions[["region_id", "geometry"]]
     if regions["region_id"].duplicated().any():
@@ -250,33 +236,9 @@ def exact_weights(regions, coordinates, n_jobs=1, backend="threading", progress=
     # Turn grid indices into the output columns: the cell's spherical area, and its
     # lat/lon coordinates rounded like the point-sampled weights, so both CSV kinds can
     # be joined against the same NetCDF coordinates.
-    lats, lons = coordinates["lat"], coordinates["lon"]
+    lats, lons = grid.lat, grid.lon
     df["cell_area_km2"] = cell_area_km2(lat_lo[df.row], lat_hi[df.row], lon_lo[df.col], lon_hi[df.col])
     df.insert(0, "lat", np.round(lats[df.row], COORD_DECIMALS))
     df.insert(1, "lon", np.round(lons[df.col], COORD_DECIMALS))
     return df.drop(columns=["row", "col"])
 
-
-def compute_exact_overlap(netcdf_path, shapefile_path, output_csv, shapefile_layer=None,
-                          default_gid="GID_1", coordinate_origin="centered",
-                          shift_longitudes=False, simplify=False, n_jobs=1,
-                          backend="threading", yes=False):
-    """Compute exact, area-aware weights for a NetCDF grid and a region file and write a CSV."""
-    coordinates = load_template_grid(netcdf_path, coordinate_origin=coordinate_origin,
-                                     shift_longitudes=shift_longitudes)
-    logger.info(f"Loading shapefile: {shapefile_path}")
-    regions = load_regions(shapefile_path, simplify=simplify, shapefile_layer=shapefile_layer,
-                           default_gid=default_gid, yes=yes)
-    logger.info("Calculating exact overlaps between grid cells and regions...")
-    df = exact_weights(regions, coordinates, n_jobs=n_jobs, backend=backend)
-
-    # Unlike point sampling, exact clipping never misses small regions, so a region can
-    # only be absent here if it lies entirely outside the grid's extent.
-    missing = sorted(set(regions["region_id"]) - set(df["region_id"]))
-    if missing:
-        logger.warning(f"{len(missing)} region(s) do not overlap the grid at all: {missing[:10]}")
-
-    # Fractions keep 8 significant digits, so even tiny regions keep a non-zero weight.
-    df.to_csv(output_csv, index=False, float_format="%.8g")
-    logger.info(f"Done. {len(df)} rows for {df['region_id'].nunique()} regions saved to {output_csv}")
-    return df

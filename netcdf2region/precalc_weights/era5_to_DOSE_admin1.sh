@@ -22,7 +22,7 @@ WEIGHTS_OUTPUT="data/ERA5_to_DOSE_admin1_weights.csv"
 NUMBER_OF_JOBS=16 # Number of parallel jobs set to the number of CPU cores
 
 # Run the Python script
-compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --yes --n_jobs=$NUMBER_OF_JOBS --shift_longitudes
+compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --n-jobs=$NUMBER_OF_JOBS --shift-longitudes
 
 if [ $? -ne 0 ]; then
     echo "compute_grid_weights failed; not validating." >&2
@@ -36,5 +36,5 @@ fi
 validate_weights "$WEIGHTS_OUTPUT" \
     --netcdf "$NETCDF_GRID" \
     --shapefile "$SHAPEFILE" \
-    --shift_longitudes \
+    --shift-longitudes \
     --max-cell-sum 2.0

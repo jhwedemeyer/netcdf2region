@@ -23,7 +23,6 @@ or from Python::
 """
 
 import argparse
-import logging
 import os
 import sys
 from dataclasses import dataclass, field
@@ -31,11 +30,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from netcdf2region.load_grid import (
-    COORD_DECIMALS,
-    cell_bounds,
-    load_template_grid,
-)
+from netcdf2region.cli import add_grid_options, add_option, add_region_options, setup_logging
+from netcdf2region.load_grid import COORD_DECIMALS, load_template_grid
 from netcdf2region.load_regions import load_regions
 
 #: Columns every weights CSV must have, in this order.
@@ -222,7 +218,7 @@ def _check_no_duplicates(df):
 def _check_regions_represented(df):
     """Check 5: every region present in the file carries positive weight.
 
-    Rows with a weight of zero are dropped by ``compute_overlap``, so a region
+    Rows with a weight of zero are dropped by ``compute_weights``, so a region
     whose every overlap rounded away would vanish entirely. This catches the case
     where such rows were written anyway.
     """
@@ -269,7 +265,7 @@ def _check_cell_sums(df, max_cell_sum):
     )
 
 
-def _check_coords_on_grid(df, coordinates):
+def _check_coords_on_grid(df, grid):
     """Check 7: every coordinate in the file is an actual grid coordinate.
 
     ``aggregate`` resolves weights to grid indices by equality after rounding both
@@ -277,14 +273,14 @@ def _check_coords_on_grid(df, coordinates):
     reproduces. A coordinate that is off by more than a rounding step is therefore not
     a cosmetic problem - it makes aggregation fail outright.
     """
-    if coordinates is None:
+    if grid is None:
         return Check(
             "coords_on_grid", True, ERROR,
             "skipped (no template grid supplied)", {"skipped": True},
         )
 
-    grid_lats = set(np.round(coordinates["lat"], COORD_DECIMALS).tolist())
-    grid_lons = set(np.round(coordinates["lon"], COORD_DECIMALS).tolist())
+    grid_lats = set(np.round(grid.lat, COORD_DECIMALS).tolist())
+    grid_lons = set(np.round(grid.lon, COORD_DECIMALS).tolist())
 
     file_lats = np.round(df["lat"].unique(), COORD_DECIMALS)
     file_lons = np.round(df["lon"].unique(), COORD_DECIMALS)
@@ -356,7 +352,7 @@ def _cell_area_km2(lat, lat_res, lon_res):
     )
 
 
-def _check_region_areas(df, regions, coordinates, area_rtol):
+def _check_region_areas(df, regions, grid, area_rtol):
     """Check 9: weights reconstruct each region's true area, where that is testable.
 
     ``sum(weight * cell_area)`` over a region's cells should approach the region's
@@ -368,14 +364,14 @@ def _check_region_areas(df, regions, coordinates, area_rtol):
     see ``skip_reasons`` below. One bias remains invisible here: a region stored
     unsplit across +/-180 has a meaningless bounding box.
     """
-    if regions is None or coordinates is None:
+    if regions is None or grid is None:
         return Check(
             "region_areas", True, WARNING,
             "skipped (needs both a shapefile and a template grid)", {"skipped": True},
         )
 
-    lat_res = coordinates["lat_res"]
-    lon_res = coordinates["lon_res"]
+    lat_res = grid.lat_res
+    lon_res = grid.lon_res
 
     weighted = df.copy()
     weighted["cell_area"] = _cell_area_km2(weighted["lat"].values, lat_res, lon_res)
@@ -423,10 +419,10 @@ def _check_region_areas(df, regions, coordinates, area_rtol):
             ~dissolved.geometry.loc[common].is_valid.values | ~(ref > 0),
         "cell clamped at the pole": est["polar"],
         "extends beyond the template grid":
-            (bounds["miny"] < coordinates["lat"].min() - lat_res / 2)
-            | (bounds["maxy"] > coordinates["lat"].max() + lat_res / 2)
-            | (bounds["minx"] < coordinates["lon"].min() - lon_res / 2)
-            | (bounds["maxx"] > coordinates["lon"].max() + lon_res / 2),
+            (bounds["miny"] < grid.lat.min() - lat_res / 2)
+            | (bounds["maxy"] > grid.lat.max() + lat_res / 2)
+            | (bounds["minx"] < grid.lon.min() - lon_res / 2)
+            | (bounds["maxx"] > grid.lon.max() + lon_res / 2),
         # A region small enough to sit inside one cell is described by a weight
         # rounded to 2 decimals, so its area comes in steps of a whole percent of
         # that cell: for a region covering a fraction of a percent of it the
@@ -506,7 +502,7 @@ def _check_statistics(df):
 
 def validate_weights(
     weights,
-    coordinates=None,
+    grid=None,
     regions=None,
     max_cell_sum=1.01,
     area_rtol=0.05,
@@ -515,7 +511,7 @@ def validate_weights(
 
     Args:
         weights: Path to a weights CSV, or a DataFrame with the weights columns.
-        coordinates: Optional grid description from
+        grid: Optional template :class:`~netcdf2region.load_grid.Grid`, e.g. from
             :func:`~netcdf2region.load_grid.load_template_grid`.
             Enables the on-grid coordinate check.
         regions: Optional GeoDataFrame (with a ``region_id`` column) or path to a
@@ -538,7 +534,7 @@ def validate_weights(
 
     if isinstance(regions, str):
         regions = load_regions(
-            regions, simplify=False, shapefile_layer=None, default_gid="GID_1", yes=True
+            regions, simplify=False, shapefile_layer=None, default_gid="GID_1"
         )
 
     report = Report(source=source)
@@ -560,9 +556,9 @@ def validate_weights(
     report.checks.append(_check_no_duplicates(df))
     report.checks.append(_check_regions_represented(df))
     report.checks.append(_check_cell_sums(df, max_cell_sum))
-    report.checks.append(_check_coords_on_grid(df, coordinates))
+    report.checks.append(_check_coords_on_grid(df, grid))
     report.checks.append(_check_region_coverage(df, regions))
-    report.checks.append(_check_region_areas(df, regions, coordinates, area_rtol))
+    report.checks.append(_check_region_areas(df, regions, grid, area_rtol))
     report.checks.append(_check_statistics(df))
 
     return report
@@ -582,34 +578,26 @@ def main():
         "--shapefile", default=None,
         help="Shapefile the weights were computed from (enables the coverage/area checks)",
     )
-    parser.add_argument("--shapefile_layer", type=int, default=None, help="Layer index")
-    parser.add_argument("--gid", default="GID_1", help="Region id column (default: GID_1)")
-    parser.add_argument(
-        "--coordinate_origin", choices=["centered", "top-left"], default="centered",
-        help="Coordinate origin of the template grid (default: centered)",
-    )
-    parser.add_argument(
-        "--shift_longitudes", action="store_true",
-        help="Shift template longitudes from [0, 360] to [-180, 180]",
-    )
-    parser.add_argument(
-        "--max-cell-sum", dest="max_cell_sum", type=float, default=1.01,
+    add_region_options(parser)
+    add_grid_options(parser)
+    add_option(
+        parser, "--max-cell-sum", type=float, default=1.01,
         help="Warn when a cell's weights sum above this (default: 1.01)",
     )
-    parser.add_argument(
-        "--area-rtol", dest="area_rtol", type=float, default=0.05,
+    add_option(
+        parser, "--area-rtol", type=float, default=0.05,
         help="Relative tolerance for the region area check (default: 0.05)",
     )
-    parser.add_argument(
-        "--strict", action="store_true",
+    add_option(
+        parser, "--strict", action="store_true",
         help="Exit non-zero when any check fails, including warnings",
     )
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    setup_logging()
 
-    coordinates = None
+    grid = None
     if args.netcdf:
-        coordinates = load_template_grid(
+        grid = load_template_grid(
             args.netcdf,
             coordinate_origin=args.coordinate_origin,
             shift_longitudes=args.shift_longitudes,
@@ -622,12 +610,11 @@ def main():
             simplify=False,
             shapefile_layer=args.shapefile_layer,
             default_gid=args.gid,
-            yes=True,
         )
 
     report = validate_weights(
         args.weights,
-        coordinates=coordinates,
+        grid=grid,
         regions=regions,
         max_cell_sum=args.max_cell_sum,
         area_rtol=args.area_rtol,

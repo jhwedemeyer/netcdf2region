@@ -17,8 +17,8 @@ import pytest
 
 from netcdf2region.load_grid import load_template_grid
 from netcdf2region.load_regions import load_regions
-from netcdf2region.sampled_weights import compute_overlap
-from netcdf2region.load_weights import precalc_weights_path
+from netcdf2region.compute_grid_weights import compute_weights
+from netcdf2region.weights import precalc_weights_path
 from netcdf2region.validate_weights import validate_weights
 
 pytestmark = pytest.mark.cluster
@@ -50,7 +50,7 @@ def test_era5_grid_is_quarter_degree_after_shifting(cluster_paths):
         _require(cluster_paths["era5"]), coordinate_origin="centered", shift_longitudes=True
     )
 
-    assert np.isclose(coords["lat_res"], 0.25)
+    assert np.isclose(coords.lat_res, 0.25)
     assert np.isclose(coords["lon_res"], 0.25)
     assert coords["lon"].min() >= -180
     assert coords["lon"].max() <= 180
@@ -58,7 +58,7 @@ def test_era5_grid_is_quarter_degree_after_shifting(cluster_paths):
 
 
 def test_era5_grid_is_rejected_without_the_shift_flag(cluster_paths):
-    """Confirms the ERA5 scripts genuinely need --shift_longitudes."""
+    """Confirms the ERA5 scripts genuinely need --shift-longitudes."""
     with pytest.raises(ValueError, match="shift_longitudes"):
         load_template_grid(
             _require(cluster_paths["era5"]),
@@ -67,12 +67,12 @@ def test_era5_grid_is_rejected_without_the_shift_flag(cluster_paths):
 
 
 def test_isimip_grid_is_half_degree_without_shifting(cluster_paths):
-    """Confirms the ISIMIP scripts are right to omit --shift_longitudes."""
+    """Confirms the ISIMIP scripts are right to omit --shift-longitudes."""
     coords = load_template_grid(
         _require(cluster_paths["isimip"]), coordinate_origin="centered", shift_longitudes=False
     )
 
-    assert np.isclose(coords["lat_res"], 0.5)
+    assert np.isclose(coords.lat_res, 0.5)
     assert np.isclose(coords["lon_res"], 0.5)
 
 
@@ -80,7 +80,7 @@ def test_dose_shapefile_provides_gid_1(cluster_paths):
     """The DOSE scripts pass no --gid, so the default GID_1 must be present."""
     regions = load_regions(
         _require(cluster_paths["dose"]), simplify=False, shapefile_layer=None,
-        default_gid="GID_1", yes=True,
+        default_gid="GID_1",
     )
 
     assert "region_id" in regions.columns
@@ -93,7 +93,7 @@ def test_dose_shapefile_provides_gid_1(cluster_paths):
 def test_gadm_layers_load(cluster_paths, layer, expected_gid):
     regions = load_regions(
         _require(cluster_paths["gadm"]), simplify=False, shapefile_layer=layer,
-        default_gid="GID_1", yes=True,
+        default_gid="GID_1",
     )
 
     assert "region_id" in regions.columns
@@ -105,7 +105,7 @@ def test_dose_regions_genuinely_overlap(cluster_paths):
     """Justifies treating cell sums above 1 as a warning rather than an error."""
     regions = load_regions(
         _require(cluster_paths["dose"]), simplify=False, shapefile_layer=None,
-        default_gid="GID_1", yes=True,
+        default_gid="GID_1",
     )
     esh = regions[regions["region_id"] == "ESH.1_1"]
     mar = regions[regions["region_id"] == "MAR.26_1"]
@@ -128,7 +128,7 @@ def test_shipped_weights_sit_on_their_template_grid(name, cluster_paths):
     )
 
     report = validate_weights(
-        str(precalc_weights_path(name)), coordinates=coords, max_cell_sum=2.0
+        str(precalc_weights_path(name)), grid=coords, max_cell_sum=2.0
     )
 
     assert report.ok, report.summary()
@@ -145,7 +145,7 @@ def test_shipped_weights_cover_every_region(name, cluster_paths):
     _, shape_key, layer, _ = WEIGHTS_PROVENANCE[name]
     regions = load_regions(
         _require(cluster_paths[shape_key]), simplify=False, shapefile_layer=layer,
-        default_gid="GID_1", yes=True,
+        default_gid="GID_1",
     )
 
     report = validate_weights(
@@ -168,12 +168,12 @@ def test_shipped_weights_reconstruct_region_areas(name, cluster_paths):
     )
     regions = load_regions(
         _require(cluster_paths[shape_key]), simplify=False, shapefile_layer=layer,
-        default_gid="GID_1", yes=True,
+        default_gid="GID_1",
     )
 
     report = validate_weights(
         str(precalc_weights_path(name)),
-        coordinates=coords, regions=regions, max_cell_sum=2.0, area_rtol=0.25,
+        grid=coords, regions=regions, max_cell_sum=2.0, area_rtol=0.25,
     )
     areas = next(c for c in report.checks if c.name == "region_areas")
 
@@ -217,7 +217,7 @@ def test_end_to_end_on_real_data_cropped(tmp_path, cluster_paths):
 
     from shapely.geometry import box
 
-    regions = load_regions(gadm, False, 1, "GID_1", yes=True)
+    regions = load_regions(gadm, False, 1, "GID_1")
     window = regions[regions.intersects(box(6.0, 47.0, 11.0, 52.0))].copy()
     if window.empty:
         pytest.skip("no GADM regions in the crop window")
@@ -225,14 +225,12 @@ def test_end_to_end_on_real_data_cropped(tmp_path, cluster_paths):
     window.to_file(shapefile, driver="GPKG")
 
     out = tmp_path / "weights.csv"
-    compute_overlap(
-        netcdf_path=grid, shapefile_path=shapefile, output_csv=str(out),
-        points_per_cell=25, simplify=False, shapefile_layer=None,
-        point_distribution="uniform", backend="threading", n_jobs=4, yes=True,
-        coordinate_origin="centered", default_gid="region_id", shift_longitudes=False,
+    compute_weights(
+        grid, shapefile, str(out), method="sampling",
+        points_per_cell=25, n_jobs=4, gid="region_id",
     )
 
     coords = load_template_grid(grid, coordinate_origin="centered", shift_longitudes=False)
-    report = validate_weights(str(out), coordinates=coords, max_cell_sum=2.0)
+    report = validate_weights(str(out), grid=coords, max_cell_sum=2.0)
 
     assert report.ok, report.summary()

@@ -1,5 +1,7 @@
 """Tests for the exact, area-aware weights (``compute_grid_weights --method exact``)."""
 
+import dataclasses
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -10,19 +12,20 @@ from factories import (
     MINI_EXPECTED_SAMPLED,
     make_grid_nc,
     make_regions,
-    mini_coordinates,
+    mini_grid,
     mini_polygons,
     write_regions,
 )
 from netcdf2region.exact_weights import (
     EARTH_RADIUS_KM,
+    MIN_FRACTION,
     cell_area_km2,
-    compute_exact_overlap,
     exact_weights,
-    grid_edges,
     region_cell_fractions,
 )
 from netcdf2region.aggregate import aggregate
+from netcdf2region.compute_grid_weights import compute_weights
+from netcdf2region.load_grid import Grid
 
 
 def _regions(polygons):
@@ -39,7 +42,7 @@ def _lookup(df):
 
 def test_mini_regions_get_their_exact_fractions():
     """Full, half and quarter cells come out exactly, like the sampled golden values."""
-    df = exact_weights(_regions(mini_polygons()), mini_coordinates(), progress=False)
+    df = exact_weights(_regions(mini_polygons()), mini_grid(), progress=False)
     got = _lookup(df)
     for key, expected in MINI_EXPECTED_SAMPLED.items():
         assert got[key] == pytest.approx(expected, abs=1e-12)
@@ -47,23 +50,39 @@ def test_mini_regions_get_their_exact_fractions():
 
 def test_slivers_that_sampling_misses_get_their_exact_area():
     """D and E fall between sample points; exact intersection still sees them."""
-    got = _lookup(exact_weights(_regions(mini_polygons()), mini_coordinates(), progress=False))
+    got = _lookup(exact_weights(_regions(mini_polygons()), mini_grid(), progress=False))
     assert got[("D", 4.5, 7.5)] == pytest.approx(0.02 * 0.02, rel=1e-9)
     assert got[("E", 1.5, 6.5)] == pytest.approx(0.0005 * 0.0005, rel=1e-6)
 
 
 def test_every_region_is_represented_and_no_zero_rows():
-    df = exact_weights(_regions(mini_polygons()), mini_coordinates(), progress=False)
+    df = exact_weights(_regions(mini_polygons()), mini_grid(), progress=False)
     assert set(df.region_id) == set(mini_polygons())
     assert (df.percent_overlap > 0).all()
     assert (df.percent_overlap <= 1).all()
+
+
+def test_floating_point_slivers_are_dropped():
+    """An overlap far below MIN_FRACTION (e.g. a shared border off by rounding) is noise."""
+    eps = 1e-12
+    edges = mini_grid().edges()
+    _, _, frac = region_cell_fractions(box(0.0, 0.0, 1.0 + eps, 1.0), *edges)
+    assert frac.tolist() == [1.0]
+
+
+def test_region_smaller_than_tolerance_is_kept():
+    """A region whose only overlaps are below MIN_FRACTION must not vanish."""
+    side = 1e-6   # area 1e-12 of a 1 deg cell
+    df = exact_weights(_regions({"T": box(0.5, 0.5, 0.5 + side, 0.5 + side)}), mini_grid(), progress=False)
+    assert df.region_id.tolist() == ["T"]
+    assert df.percent_overlap.iloc[0] < MIN_FRACTION
 
 
 def test_polygon_with_hole_and_multipart():
     """A hole is subtracted and the parts of a multipolygon are combined."""
     ring = box(0.0, 0.0, 2.0, 2.0).difference(box(0.25, 0.25, 0.75, 0.75))   # hole of 0.25 in cell (0, 0)
     multi = MultiPolygon([box(4.0, 0.0, 4.5, 1.0), box(6.0, 0.0, 6.25, 1.0)])
-    got = _lookup(exact_weights(_regions({"H": ring, "M": multi}), mini_coordinates(), progress=False))
+    got = _lookup(exact_weights(_regions({"H": ring, "M": multi}), mini_grid(), progress=False))
     assert got[("H", 0.5, 0.5)] == pytest.approx(0.75)
     assert got[("H", 1.5, 1.5)] == pytest.approx(1.0)
     assert got[("M", 0.5, 4.5)] == pytest.approx(0.5)
@@ -75,7 +94,7 @@ def test_bisection_clipping_matches_naive_per_cell_intersection():
     rng = np.random.default_rng(1)
     blob = Point(4.1, 2.9).buffer(2.3, quad_segs=64)
     blob = shapely.affinity.rotate(blob, 30).union(Point(1.2, 4.7).buffer(0.8))
-    lat_lo, lat_hi, lon_lo, lon_hi = grid_edges(mini_coordinates())
+    lat_lo, lat_hi, lon_lo, lon_hi = mini_grid().edges()
     r, c, f = region_cell_fractions(blob, lat_lo, lat_hi, lon_lo, lon_hi)
     for ri, ci, fi in zip(r, c, f):
         cell = box(lon_lo[ci], lat_lo[ri], lon_hi[ci], lat_hi[ri])
@@ -89,8 +108,8 @@ def test_bisection_clipping_matches_naive_per_cell_intersection():
 
 
 def test_descending_latitudes_give_the_same_weights():
-    coords = mini_coordinates()
-    flipped = dict(coords, lat=coords["lat"][::-1].copy())
+    coords = mini_grid()
+    flipped = dataclasses.replace(coords, lat=coords.lat[::-1].copy())
     a = exact_weights(_regions(mini_polygons()), coords, progress=False)
     b = exact_weights(_regions(mini_polygons()), flipped, progress=False)
     key = ["region_id", "lat", "lon"]
@@ -105,8 +124,7 @@ def test_descending_latitudes_give_the_same_weights():
 def test_global_cell_areas_sum_to_the_sphere():
     lats = np.arange(-89.75, 90, 0.5)
     lons = np.arange(-179.75, 180, 0.5)
-    coords = {"lat": lats, "lon": lons, "lat_res": 0.5, "lon_res": 0.5, "coordinate_origin": "centered"}
-    lat_lo, lat_hi, lon_lo, lon_hi = grid_edges(coords)
+    lat_lo, lat_hi, lon_lo, lon_hi = Grid(lats, lons, 0.5, 0.5).edges()
     total = cell_area_km2(lat_lo[:, None], lat_hi[:, None], lon_lo[None, :], lon_hi[None, :]).sum()
     assert total == pytest.approx(4 * np.pi * EARTH_RADIUS_KM ** 2, rel=1e-12)
 
@@ -133,7 +151,7 @@ def test_csv_roundtrip_and_area_weighted_mean(tmp_path):
     regions = write_regions(make_regions({"R": MultiPolygon([box(0, 0, 1, 1), box(0, 60, 1, 61)])}),
                             tmp_path / "r.gpkg")
     w = tmp_path / "w.csv"
-    compute_exact_overlap(nc_grid, regions, str(w), n_jobs=1)
+    compute_weights(nc_grid, regions, str(w), n_jobs=1)
 
     weights = pd.read_csv(w)
     assert list(weights.columns) == ["lat", "lon", "region_id", "percent_overlap", "cell_area_km2"]
@@ -181,7 +199,7 @@ def test_fast_clipping_matches_exact_clipping():
     """clip_by_rect with validity fallback must agree with plain intersections."""
     blob = Point(4.1, 2.9).buffer(2.3, quad_segs=64).union(Point(1.2, 4.7).buffer(0.8))
     islands = MultiPolygon([Point(0.3 + 0.37 * k, 0.4 + 0.29 * (k % 7)).buffer(0.11) for k in range(18)])
-    edges = grid_edges(mini_coordinates())
+    edges = mini_grid().edges()
     for geom in (blob, islands, box(0, 0, 8, 6).difference(blob)):
         a = region_cell_fractions(geom, *edges, fast=True)
         b = region_cell_fractions(geom, *edges, fast=False)
@@ -194,7 +212,7 @@ def test_area_check_falls_back_to_exact_clipping(monkeypatch):
     """If fast clipping returns a wrong piece, the area check must catch it."""
     import netcdf2region.exact_weights as ew
     blob = Point(4.1, 2.9).buffer(2.3, quad_segs=64)
-    edges = grid_edges(mini_coordinates())
+    edges = mini_grid().edges()
     expected = ew.region_cell_fractions(blob, *edges, fast=False)
 
     def broken_clip(piece, x0, y0, x1, y1):  # returns the whole rectangle: wrong area

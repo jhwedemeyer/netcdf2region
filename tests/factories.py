@@ -13,6 +13,8 @@ import pandas as pd
 import xarray as xr
 from shapely.geometry import box
 
+from netcdf2region.load_grid import Grid
+
 #: The grid every "mini" fixture is built on: 1 degree cells, centred coordinates,
 #: spanning lon [0, 8] and lat [0, 6].
 MINI_LATS = np.arange(0.5, 6.0, 1.0)
@@ -164,15 +166,9 @@ MINI_EXPECTED_RESCUED = {
 }
 
 
-def mini_coordinates(coordinate_origin="centered"):
-    """The mini grid as a ``load_template_grid``-style coordinates dict."""
-    return {
-        "lat": MINI_LATS.copy(),
-        "lon": MINI_LONS.copy(),
-        "lat_res": 1.0,
-        "lon_res": 1.0,
-        "coordinate_origin": coordinate_origin,
-    }
+def mini_grid(coordinate_origin="centered"):
+    """The mini grid as a :class:`~netcdf2region.load_grid.Grid`."""
+    return Grid(MINI_LATS.copy(), MINI_LONS.copy(), 1.0, 1.0, coordinate_origin)
 
 
 def make_weights_df(rows):

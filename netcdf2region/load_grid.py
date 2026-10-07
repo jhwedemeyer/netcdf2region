@@ -7,6 +7,7 @@ and by :mod:`aggregate`.
 
 import logging
 import os
+from dataclasses import dataclass
 
 import numpy as np
 import xarray as xr
@@ -16,6 +17,72 @@ import xarray as xr
 COORD_DECIMALS = 3
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Grid:
+    """A regular lat/lon grid, as the weights are computed on.
+
+    Attributes:
+        lat, lon: Coordinate axes in degrees (EPSG:4326). Longitudes ascend; latitudes
+            may run either way.
+        lat_res, lon_res: Spacing between neighbouring coordinates.
+        coordinate_origin: ``"centered"`` if the coordinates are cell centres,
+            ``"top-left"`` if they are cell edges (so one more edge than cells per axis).
+    """
+
+    lat: np.ndarray
+    lon: np.ndarray
+    lat_res: float
+    lon_res: float
+    coordinate_origin: str = "centered"
+
+    def __post_init__(self):
+        if self.coordinate_origin not in ("centered", "top-left"):
+            raise ValueError("Invalid coordinate origin. Must be 'centered' or 'top-left'.")
+
+    @property
+    def shape(self):
+        """Number of cells along (lat, lon)."""
+        if self.coordinate_origin == "centered":
+            return len(self.lat), len(self.lon)
+        return len(self.lat) - 1, len(self.lon) - 1
+
+    def cell_bounds(self, i, j):
+        """Return the (lon1, lat1, lon2, lat2) edges of grid cell (i, j)."""
+        lats, lons = self.lat, self.lon
+        if self.coordinate_origin == "centered":
+            lat1, lat2 = lats[i] - self.lat_res / 2, lats[i] + self.lat_res / 2
+            lon1, lon2 = lons[j] - self.lon_res / 2, lons[j] + self.lon_res / 2
+        else:  # top-left: coordinates are cell edges
+            lat1, lat2 = lats[i], lats[i + 1]
+            lon1, lon2 = lons[j], lons[j + 1]
+        return min(lon1, lon2), min(lat1, lat2), max(lon1, lon2), max(lat1, lat2)
+
+    def edges(self):
+        """Return the lower and upper cell edges along each axis.
+
+        Returns:
+            tuple: ``(lat_lo, lat_hi, lon_lo, lon_hi)``, indexed like the grid's own
+            ``lat`` and ``lon`` axes (so ascending or descending order is preserved).
+        """
+        # The grid is regular in lon/lat, so the latitude edges depend only on the row
+        # and the longitude edges only on the column: the same values cell_bounds gives,
+        # computed once per axis.
+        if self.coordinate_origin == "centered":
+            lat_a, lat_b = self.lat - self.lat_res / 2, self.lat + self.lat_res / 2
+            lon_a, lon_b = self.lon - self.lon_res / 2, self.lon + self.lon_res / 2
+        else:  # top-left: the coordinates are cell edges
+            lat_a, lat_b = self.lat[:-1], self.lat[1:]
+            lon_a, lon_b = self.lon[:-1], self.lon[1:]
+        # Clamp to the globe: a cell centred on +-89.75 with 0.5 deg resolution ends at
+        # +-90, but rounding can push the edge marginally beyond it.
+        return (
+            np.clip(np.minimum(lat_a, lat_b), -90, 90),
+            np.clip(np.maximum(lat_a, lat_b), -90, 90),
+            np.minimum(lon_a, lon_b),
+            np.maximum(lon_a, lon_b),
+        )
 
 
 def check_coordinate_resolution(lats, lons):
@@ -74,7 +141,7 @@ def _read_axes(ds, shift_longitudes):
     lon_order = None
     if not np.all((lons >= -180) & (lons <= 180)):
         if not shift_longitudes:
-            raise ValueError("Longitude values are not in EPSG:4326 range (-180 to 180 or 0 to 360). You might want to enable longitude shifting with the --shift_longitudes flag if your data uses [0, 360] range.")
+            raise ValueError("Longitude values are not in EPSG:4326 range (-180 to 180 or 0 to 360). You might want to enable longitude shifting with the --shift-longitudes flag if your data uses [0, 360] range.")
         if not np.all((lons >= 0) & (lons <= 360)):
             raise ValueError("Longitude values are not in EPSG:4326 range (-180 to 180 or 0 to 360).")
         logger.info("Shifting longitudes from [0, 360] to [-180, 180]. Double check if this works for your data!")
@@ -87,8 +154,8 @@ def _read_axes(ds, shift_longitudes):
     return lat_name, lon_name, lats, lons, lon_order
 
 
-def load_template_grid(netcdf_path, coordinate_origin, shift_longitudes):
-    """Load the NetCDF grid and infer its properties."""
+def load_template_grid(netcdf_path, coordinate_origin="centered", shift_longitudes=False):
+    """Load the grid of a NetCDF file as a :class:`Grid`."""
     logger.info(f"Loading NetCDF: {netcdf_path}")
 
     with _open_dataset(netcdf_path) as ds:
@@ -98,20 +165,11 @@ def load_template_grid(netcdf_path, coordinate_origin, shift_longitudes):
     lon_res = np.abs(lons[1] - lons[0])
     logger.info(f"Grid resolution: {lat_res:.2f}° latitude × {lon_res:.2f}° longitude")
 
-    if coordinate_origin not in ["centered", "top-left"]:
-        raise ValueError("Invalid coordinate origin. Must be 'centered' or 'top-left'.")
-
     # Cell edges are derived from neighbouring longitudes, so they must ascend.
     if not np.all(np.diff(lons) > 0):
         raise ValueError("Longitudes must be in increasing order")
 
-    return {
-        "lat": lats,
-        "lon": lons,
-        "lat_res": lat_res,
-        "lon_res": lon_res,
-        "coordinate_origin": coordinate_origin
-    }
+    return Grid(lats, lons, lat_res, lon_res, coordinate_origin)
 
 
 def load_data_grid(
@@ -156,7 +214,7 @@ def load_data_grid(
             else:
                 raise ValueError(
                     f"Could not infer a unique time dimension for variable '{var}'. "
-                    f"Found non-spatial dimensions: {candidate_time_dims}. Please provide --time_var."
+                    f"Found non-spatial dimensions: {candidate_time_dims}. Please provide --time-var."
                 )
 
         if require_time and time_name is None:
@@ -184,21 +242,7 @@ def load_data_grid(
     lon_values = np.round(lon_values, COORD_DECIMALS)
 
     if np.isnan(values).any() and not allow_nan:
-        raise ValueError(f"Variable '{var}' in file '{netcdf_path}' contains NaN values. This may affect the aggregation results. Add --allow_nan to proceed anyway.")
+        raise ValueError(f"Variable '{var}' in file '{netcdf_path}' contains NaN values. This may affect the aggregation results. Add --allow-nan to proceed anyway.")
 
     return values, lat_values, lon_values, time_values
 
-
-def cell_bounds(i, j, coordinates):
-    """Return the (lon1, lat1, lon2, lat2) edges of grid cell (i, j)."""
-    lats = coordinates['lat']
-    lons = coordinates['lon']
-    lat_res = coordinates['lat_res']
-    lon_res = coordinates['lon_res']
-    if coordinates['coordinate_origin'] == "centered":
-        lat1, lat2 = lats[i] - lat_res / 2, lats[i] + lat_res / 2
-        lon1, lon2 = lons[j] - lon_res / 2, lons[j] + lon_res / 2
-    else:  # top-left: coordinates are cell edges
-        lat1, lat2 = lats[i], lats[i + 1]
-        lon1, lon2 = lons[j], lons[j + 1]
-    return min(lon1, lon2), min(lat1, lat2), max(lon1, lon2), max(lat1, lat2)

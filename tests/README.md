@@ -17,12 +17,15 @@ and adds about a second.
 
 | File | Covers |
 |---|---|
-| `test_geometry.py` | `uniform_points_in_cell`, `random_points_in_cell`, `cell_bounds`, `generate_point_distribution` |
-| `test_grid_loading.py` | `load_template_grid` (incl. `--shift_longitudes`, naming variants, every error path) |
-| `test_overlap.py` | `calc_cell_region_overlap`, `assign_missing_regions` (the small-region rescue path) |
-| `test_compute_overlap.py` | the whole pipeline end to end, `load_regions`, the `compute_grid_weights` CLI, and the golden regression check |
+| `test_load_grid.py` | `load_template_grid` and `load_data_grid` (incl. `--shift-longitudes`, naming variants, every error path) and the `Grid` cells |
+| `test_load_regions.py` | `load_regions` |
+| `test_sampled_weights.py` | `uniform_points_in_cell`, `random_points_in_cell`, `generate_point_distribution`, `calc_cell_region_overlap`, `assign_missing_regions` (the small-region rescue path) |
+| `test_exact_weights.py` | exact fractions, cell areas, and area-weighted aggregation of the result |
+| `test_compute_grid_weights.py` | `compute_weights` end to end, the `compute_grid_weights` CLI, and the golden regression check |
+| `test_weights.py` | `correct_weights`, `precalc_weights_path`, `validate_secondary_weights` |
+| `test_aggregate.py` | `aggregate` (mean/sum/std, secondary weights, longitude conventions) and the `netcdf2region` CLI |
 | `test_validate_weights.py` | every rule in `netcdf2region/validate_weights.py`, plus its CLI and exit codes |
-| `test_aggregate.py` | `load_netcdf`, `correct_weights`, `aggregate` (mean/sum/std, secondary weights, longitude conventions), and the `netcdf2region` CLI |
+| `test_cli.py` | the option helpers the three commands share (hyphenated flags, hidden underscore aliases) |
 | `test_shipped_data.py` | invariants and regression guards for the six shipped `data/*_weights.csv` |
 | `test_cluster.py` | the real ERA5/ISIMIP/GADM/DOSE inputs — skipped unless `/p/projects/impactee` exists |
 
@@ -53,7 +56,7 @@ python tests/data/make_fixtures.py --check    # verify byte-identical
 ```
 
 `golden_mini_weights.csv` is the real regression guard: uniform sampling is
-deterministic, so a fresh `compute_overlap` run must reproduce it byte for byte.
+deterministic, so a fresh `compute_weights(method="sampling")` run must reproduce it byte for byte.
 If it changes, something about sampling, rounding, or the rescue path changed.
 
 `shipped_slice_ISIMIP_DOSE.csv` is a 53-row cut of complete regions from
@@ -67,7 +70,7 @@ weights into a readable diff rather than an opaque failure.
 has 13 689 cells above 1.0, peaking at exactly 2.00: DOSE polygons overlap, and
 cell (24.75, -14.25) is claimed in full by both `ESH.1_1` (Western Sahara) and
 `MAR.26_1`. `validate_weights` therefore treats the cell sum as a *warning* with a
-configurable ceiling. It also means `--correct_weights` scales those cells **down**.
+configurable ceiling. It also means `--correct-weights` scales those cells **down**.
 
 **The shipped weights predate the small-region fix.** All six files have
 `min(percent_overlap) == 0.01` and no rows with more than 2 decimals, so they

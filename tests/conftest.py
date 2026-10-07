@@ -9,7 +9,7 @@ import pytest
 from factories import (
     MINI_POINTS_PER_CELL,
     make_regions,
-    mini_coordinates,
+    mini_grid,
     mini_polygons,
 )
 
@@ -65,7 +65,7 @@ def mini_regions_geojson():
 
 @pytest.fixture(scope="session")
 def golden_weights_path():
-    """Committed expected output of ``compute_overlap`` on the mini case."""
+    """Committed expected output of ``compute_weights(method="sampling")`` on the mini case."""
     return os.path.join(DATA_DIR, "golden_mini_weights.csv")
 
 
@@ -109,9 +109,9 @@ def shipped_weights_files():
 # --------------------------------------------------------------------------- #
 
 @pytest.fixture
-def mini_coords():
-    """The mini grid as a ``load_template_grid``-style dict."""
-    return mini_coordinates()
+def mini_template_grid():
+    """The mini grid as a ``Grid``."""
+    return mini_grid()
 
 
 @pytest.fixture
@@ -128,24 +128,17 @@ def mini_weights_csv(tmp_path_factory, mini_grid_nc, mini_regions_geojson):
     Distinct from ``golden_weights_path``: this is computed fresh during the test
     session, so comparing the two is what detects a behaviour change.
     """
-    from netcdf2region.sampled_weights import compute_overlap
+    from netcdf2region.compute_grid_weights import compute_weights
 
     out = tmp_path_factory.mktemp("mini") / "weights.csv"
-    compute_overlap(
-        netcdf_path=mini_grid_nc,
-        shapefile_path=mini_regions_geojson,
-        output_csv=str(out),
+    compute_weights(
+        mini_grid_nc,
+        mini_regions_geojson,
+        str(out),
+        method="sampling",
         points_per_cell=MINI_POINTS_PER_CELL,
-        simplify=False,
-       
-        shapefile_layer=None,
         point_distribution="uniform",
-        backend="threading",
         n_jobs=1,
-        yes=True,
-        coordinate_origin="centered",
-        default_gid="GID_1",
-        shift_longitudes=False,
     )
     return str(out)
 
@@ -165,5 +158,5 @@ def gadm_regions():
     if not os.path.exists(path):
         pytest.skip(f"GADM GeoPackage not available at {path}")
     return load_regions(
-        path, simplify=False, shapefile_layer=1, default_gid="GID_1", yes=True
+        path, simplify=False, shapefile_layer=1, default_gid="GID_1"
     )

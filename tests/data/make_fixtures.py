@@ -39,7 +39,7 @@ from factories import (  # noqa: E402
     mini_polygons,
     write_regions,
 )
-from netcdf2region.sampled_weights import compute_overlap  # noqa: E402
+from netcdf2region.compute_grid_weights import compute_weights  # noqa: E402
 
 MINI_GRID_NC = os.path.join(HERE, "mini_grid.nc")
 MINI_REGIONS = os.path.join(HERE, "mini_regions.geojson")
@@ -77,21 +77,14 @@ def build_golden_weights():
     ``point_distribution="uniform"`` makes this fully deterministic, so the result
     can be compared byte for byte.
     """
-    compute_overlap(
-        netcdf_path=MINI_GRID_NC,
-        shapefile_path=MINI_REGIONS,
-        output_csv=GOLDEN_WEIGHTS,
+    compute_weights(
+        MINI_GRID_NC,
+        MINI_REGIONS,
+        GOLDEN_WEIGHTS,
+        method="sampling",
         points_per_cell=MINI_POINTS_PER_CELL,
-        simplify=False,
-       
-        shapefile_layer=None,
         point_distribution="uniform",
-        backend="threading",
         n_jobs=1,
-        yes=True,
-        coordinate_origin="centered",
-        default_gid="GID_1",
-        shift_longitudes=False,
     )
     return GOLDEN_WEIGHTS
 

@@ -22,7 +22,7 @@ WEIGHTS_OUTPUT="data/ISIMIP_to_DOSE_admin1_weights.csv"
 NUMBER_OF_JOBS=16 # Number of parallel jobs set to the number of CPU cores
 
 # Run the Python script
-compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --yes --n_jobs=$NUMBER_OF_JOBS
+compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --n-jobs=$NUMBER_OF_JOBS
 
 if [ $? -ne 0 ]; then
     echo "compute_grid_weights failed; not validating." >&2

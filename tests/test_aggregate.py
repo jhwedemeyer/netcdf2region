@@ -11,13 +11,7 @@ import pandas as pd
 import pytest
 
 from factories import MINI_LATS, MINI_LONS, make_grid_nc, make_weights_df
-from netcdf2region.load_grid import load_netcdf
 from netcdf2region.aggregate import aggregate
-from netcdf2region.load_weights import (
-    correct_weights,
-    precalc_weights_path,
-    validate_secondary_weights,
-)
 
 
 def _value(t, i, j):
@@ -40,153 +34,8 @@ def _aggregate(tmp_path, netcdf, weights, method="mean", var="tas", **kwargs):
 
 
 # --------------------------------------------------------------------------- #
-# load_netcdf
+# aggregate - longitude shifting
 # --------------------------------------------------------------------------- #
-
-def test_load_netcdf_returns_values_and_coordinates(mini_tas_nc):
-    values, lats, lons, times = load_netcdf(mini_tas_nc, "tas")
-
-    assert values.shape == (3, len(MINI_LATS), len(MINI_LONS))
-    assert np.array_equal(lats, MINI_LATS)
-    assert np.array_equal(lons, MINI_LONS)
-    assert len(times) == 3
-    assert values[2, 3, 4] == _value(2, 3, 4)
-
-
-def test_load_netcdf_accepts_latitude_longitude_naming(tmp_path):
-    path = make_grid_nc(
-        tmp_path / "g.nc", n_time=2, lat_name="latitude", lon_name="longitude"
-    )
-    values, lats, lons, _ = load_netcdf(path, "tas")
-
-    assert values.shape == (2, len(MINI_LATS), len(MINI_LONS))
-    assert np.array_equal(lats, MINI_LATS)
-
-
-def test_load_netcdf_transposes_to_time_lat_lon(tmp_path):
-    """Downstream indexing assumes (time, lat, lon) regardless of storage order."""
-    import xarray as xr
-
-    values = np.arange(2 * len(MINI_LATS) * len(MINI_LONS), dtype=float)
-    values = values.reshape(len(MINI_LATS), len(MINI_LONS), 2)
-    ds = xr.Dataset(
-        {"tas": (("lat", "lon", "time"), values)},
-        coords={
-            "lat": MINI_LATS, "lon": MINI_LONS,
-            "time": pd.date_range("2001-01-01", periods=2, freq="YS"),
-        },
-    )
-    path = str(tmp_path / "g.nc")
-    ds.to_netcdf(path)
-    ds.close()
-
-    loaded, _, _, _ = load_netcdf(path, "tas")
-
-    assert loaded.shape == (2, len(MINI_LATS), len(MINI_LONS))
-
-
-def test_load_netcdf_allows_a_spatial_only_variable(mini_pop_nc):
-    # mini_pop holds NaN cells, so loading it at all needs the opt-out.
-    values, _, _, times = load_netcdf(
-        mini_pop_nc, "pop", require_time=False, allow_nan=True
-    )
-
-    assert values.shape == (len(MINI_LATS), len(MINI_LONS))
-    assert times is None
-
-
-def test_load_netcdf_rejects_a_spatial_only_variable_when_time_is_required(mini_pop_nc):
-    with pytest.raises(ValueError, match="has no time dimension"):
-        load_netcdf(mini_pop_nc, "pop", require_time=True, allow_nan=True)
-
-
-def test_load_netcdf_rejects_nan_values_by_default(mini_pop_nc):
-    """NaNs silently corrupt every region that touches them, so refuse by default."""
-    with pytest.raises(ValueError, match="contains NaN values"):
-        load_netcdf(mini_pop_nc, "pop", require_time=False)
-
-
-def test_load_netcdf_keeps_nan_values_when_allowed(mini_pop_nc):
-    values, _, _, _ = load_netcdf(
-        mini_pop_nc, "pop", require_time=False, allow_nan=True
-    )
-
-    # The opt-out is not a repair: the NaNs are handed back untouched.
-    assert np.isnan(values).sum() == 2
-
-
-def test_load_netcdf_rejects_an_unknown_variable(mini_tas_nc):
-    with pytest.raises(KeyError, match="not found"):
-        load_netcdf(mini_tas_nc, "does_not_exist")
-
-
-def test_load_netcdf_rejects_an_unknown_time_variable(mini_tas_nc):
-    with pytest.raises(KeyError, match="not found"):
-        load_netcdf(mini_tas_nc, "tas", time_var="epoch")
-
-
-def test_load_netcdf_cannot_guess_between_two_non_spatial_dims(tmp_path):
-    """Ambiguity must be reported, with the flag that resolves it."""
-    import xarray as xr
-
-    values = np.zeros((2, 3, len(MINI_LATS), len(MINI_LONS)))
-    ds = xr.Dataset(
-        {"tas": (("time", "level", "lat", "lon"), values)},
-        coords={
-            "time": pd.date_range("2001-01-01", periods=2, freq="YS"),
-            "level": [1, 2, 3], "lat": MINI_LATS, "lon": MINI_LONS,
-        },
-    )
-    path = str(tmp_path / "g.nc")
-    ds.to_netcdf(path)
-    ds.close()
-
-    with pytest.raises(ValueError, match="time_var"):
-        load_netcdf(path, "tas")
-
-
-# --------------------------------------------------------------------------- #
-# load_netcdf - longitude shifting
-# --------------------------------------------------------------------------- #
-
-def test_load_netcdf_rejects_zero_to_360_longitudes_without_the_flag(tmp_path):
-    """Weights are written in [-180, 180]; the error must name the flag."""
-    path = make_grid_nc(tmp_path / "g.nc", lons=np.arange(0.5, 360.0, 1.0), n_time=1)
-
-    with pytest.raises(ValueError, match="shift_longitudes"):
-        load_netcdf(path, "tas")
-
-
-def test_load_netcdf_shifts_zero_to_360_longitudes_with_the_flag(tmp_path):
-    path = make_grid_nc(tmp_path / "g.nc", lons=np.arange(0.5, 360.0, 1.0), n_time=1)
-
-    _, _, lons, _ = load_netcdf(path, "tas", shift_longitudes=True)
-
-    assert lons.min() == -179.5 and lons.max() == 179.5
-    assert np.all(np.diff(lons) > 0), "shifted longitudes must stay sorted"
-
-
-def test_load_netcdf_reorders_the_data_with_the_longitudes(tmp_path):
-    """Values must follow their own longitude, not stay at their old column."""
-    lons = np.arange(0.5, 360.0, 1.0)
-    path = make_grid_nc(
-        tmp_path / "g.nc", lons=lons, lats=[0.5],
-        values=lons.reshape(1, 1, len(lons)), n_time=1,
-    )
-
-    values, _, shifted, _ = load_netcdf(path, "tas", shift_longitudes=True)
-
-    # Each cell held its own original longitude, so after the shift every value
-    # must equal its new coordinate mapped back into [0, 360].
-    assert np.array_equal(values[0, 0, :], shifted % 360)
-
-
-def test_load_netcdf_rejects_longitudes_outside_both_conventions(tmp_path):
-    path = make_grid_nc(tmp_path / "g.nc", lons=np.arange(400.0, 408.0, 1.0), n_time=1)
-
-    with pytest.raises(ValueError, match="not in EPSG:4326 range"):
-        load_netcdf(path, "tas", shift_longitudes=True)
-
 
 def test_aggregate_accepts_a_360_grid_when_shifting(tmp_path):
     """A weights file in [-180, 180] must aggregate a [0, 360] NetCDF once shifted."""
@@ -201,67 +50,6 @@ def test_aggregate_accepts_a_360_grid_when_shifting(tmp_path):
     out = _aggregate(tmp_path, path, weights, shift_longitudes=True)
 
     assert list(out["tas"]) == [180.5, 180.5]
-
-
-# --------------------------------------------------------------------------- #
-# correct_weights
-# --------------------------------------------------------------------------- #
-
-def test_correct_weights_rescales_a_partly_covered_cell():
-    """A cell 50% covered by land must have its weights scaled up to sum to 1."""
-    weights = make_weights_df([
-        (0.5, 0.5, "R1", 0.3),
-        (0.5, 0.5, "R2", 0.2),
-    ])
-
-    corrected = correct_weights(weights)
-
-    assert np.allclose(sorted(corrected["percent_overlap"]), [0.4, 0.6])
-    assert corrected["percent_overlap"].sum() == pytest.approx(1.0)
-
-
-def test_correct_weights_leaves_a_fully_covered_cell_alone():
-    weights = make_weights_df([
-        (0.5, 0.5, "R1", 0.75),
-        (0.5, 0.5, "R2", 0.25),
-    ])
-
-    corrected = correct_weights(weights)
-
-    assert np.allclose(corrected["percent_overlap"], [0.75, 0.25])
-
-
-def test_correct_weights_scales_overlapping_regions_down():
-    """Overlapping source polygons make cell sums exceed 1, and this divides by them.
-
-    The shipped DOSE weights contain cells summing to exactly 2.0 where two regions
-    both claim the cell in full. Correcting such a file halves both weights, which
-    is a real consequence of using --correct_weights with overlapping regions.
-    """
-    weights = make_weights_df([
-        (0.5, 0.5, "ESH.1_1", 1.0),
-        (0.5, 0.5, "MAR.26_1", 1.0),
-    ])
-
-    corrected = correct_weights(weights)
-
-    assert np.allclose(corrected["percent_overlap"], [0.5, 0.5])
-
-
-def test_correct_weights_treats_cells_independently():
-    weights = make_weights_df([
-        (0.5, 0.5, "R1", 0.5),
-        (1.5, 1.5, "R2", 0.25),
-    ])
-
-    corrected = correct_weights(weights)
-
-    assert np.allclose(corrected["percent_overlap"], [1.0, 1.0])
-
-
-def test_correct_weights_drops_its_helper_column():
-    corrected = correct_weights(make_weights_df([(0.5, 0.5, "R", 0.5)]))
-    assert list(corrected.columns) == ["lat", "lon", "region_id", "percent_overlap"]
 
 
 # --------------------------------------------------------------------------- #
@@ -531,20 +319,6 @@ def test_nan_secondary_weights_propagate_when_allowed(tmp_path, mini_tas_nc, min
     assert list(clean_region["tas"]) == [_value(t, 1, 1) for t in range(3)]
 
 
-def test_validate_secondary_weights_does_not_alter_the_array():
-    """The validator only checks; NaN handling is load_netcdf's decision now."""
-    data = np.array([[1.0, np.nan], [3.0, 4.0]])
-
-    returned = validate_secondary_weights(
-        lats=np.array([0.0, 1.0]), lons=np.array([0.0, 1.0]),
-        secondary_data=data, secondary_lats=np.array([0.0, 1.0]),
-        secondary_lons=np.array([0.0, 1.0]), secondary_weights_var="pop",
-    )
-
-    assert returned is None
-    assert np.isnan(data[0, 1])
-
-
 def test_secondary_weights_on_a_different_grid_are_rejected(tmp_path, mini_tas_nc):
     pop_nc = make_grid_nc(
         tmp_path / "pop.nc", var="pop",
@@ -646,19 +420,6 @@ def test_integer_weights_are_not_truncated_by_secondary_weighting(tmp_path, mini
 # Package data access and realistic input
 # --------------------------------------------------------------------------- #
 
-def test_precalc_weights_path_resolves_shipped_data():
-    path = precalc_weights_path("ISIMIP_to_DOSE_admin1_weights.csv")
-
-    assert os.path.exists(str(path))
-    assert list(pd.read_csv(path).columns) == [
-        "lat", "lon", "region_id", "percent_overlap"
-    ]
-
-
-def test_precalc_weights_path_reports_unknown_names():
-    with pytest.raises(ValueError, match="not found in package data"):
-        precalc_weights_path("no_such_weights.csv")
-
 
 def test_aggregation_over_a_real_shipped_slice(tmp_path, shipped_slice_csv):
     """Exercise the full path on genuine weights, not just synthetic ones."""
@@ -708,7 +469,7 @@ def test_cli_supports_correct_weights(tmp_path, mini_tas_nc):
 
     result = _cli(
         "--netcdf", mini_tas_nc, "--weights", weights,
-        "--method", "sum", "--output", str(out), "--var", "tas", "--correct_weights",
+        "--method", "sum", "--output", str(out), "--var", "tas", "--correct-weights",
     )
 
     assert result.returncode == 0, result.stderr
@@ -730,7 +491,7 @@ def test_cli_rejects_both_weights_sources_at_once(tmp_path, mini_tas_nc):
 
     result = _cli(
         "--netcdf", mini_tas_nc, "--weights", weights,
-        "--precalc_weights", "ISIMIP_to_DOSE_admin1_weights.csv",
+        "--precalc-weights", "ISIMIP_to_DOSE_admin1_weights.csv",
         "--method", "mean", "--output", str(tmp_path / "o.csv"), "--var", "tas",
     )
 
@@ -740,7 +501,7 @@ def test_cli_rejects_both_weights_sources_at_once(tmp_path, mini_tas_nc):
 
 def test_cli_reports_an_unknown_precalc_name(tmp_path, mini_tas_nc):
     result = _cli(
-        "--netcdf", mini_tas_nc, "--precalc_weights", "nope.csv",
+        "--netcdf", mini_tas_nc, "--precalc-weights", "nope.csv",
         "--method", "mean", "--output", str(tmp_path / "o.csv"), "--var", "tas",
     )
 
@@ -755,13 +516,13 @@ def test_cli_requires_both_secondary_weight_options(tmp_path, mini_tas_nc, mini_
         "--output", str(tmp_path / "o.csv"), "--var", "tas",
     ]
 
-    only_var = _cli(*common, "--secondary_weights_var", "pop")
-    only_file = _cli(*common, "--secondary_weights_netcdf", mini_pop_nc)
+    only_var = _cli(*common, "--secondary-weights-var", "pop")
+    only_file = _cli(*common, "--secondary-weights-netcdf", mini_pop_nc)
 
     assert only_var.returncode != 0
-    assert "requires --secondary_weights_netcdf" in only_var.stderr
+    assert "requires --secondary-weights-netcdf" in only_var.stderr
     assert only_file.returncode != 0
-    assert "requires --secondary_weights_var" in only_file.stderr
+    assert "requires --secondary-weights-var" in only_file.stderr
 
 
 def test_cli_rejects_an_unsupported_method(tmp_path, mini_tas_nc):
@@ -774,12 +535,3 @@ def test_cli_rejects_an_unsupported_method(tmp_path, mini_tas_nc):
 
     assert result.returncode == 2
     assert "invalid choice" in result.stderr
-
-
-def test_load_netcdf_rejects_a_grid_finer_than_the_stored_coordinate_precision(tmp_path):
-    path = make_grid_nc(
-        tmp_path / "g.nc", lons=np.arange(0.0, 0.004, 0.0005), n_time=1
-    )
-
-    with pytest.raises(ValueError, match="finer than the supported resolution"):
-        load_netcdf(path, "tas")

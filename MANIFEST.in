@@ -1,2 +1,0 @@
-include netcdf2region/data/*.csv
-include netcdf2region/data/__init__.py

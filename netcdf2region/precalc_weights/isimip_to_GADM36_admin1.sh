@@ -24,7 +24,7 @@ WEIGHTS_OUTPUT="data/ISIMIP_to_GADM36_admin1_weights.csv"
 NUMBER_OF_JOBS=16 # Number of parallel jobs set to the number of CPU cores
 
 # Run the Python script
-compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --yes --shapefile_layer=$SHAPEFILE_LAYER --n_jobs=$NUMBER_OF_JOBS
+compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --shapefile-layer=$SHAPEFILE_LAYER --n-jobs=$NUMBER_OF_JOBS
 
 if [ $? -ne 0 ]; then
     echo "compute_grid_weights failed; not validating." >&2
@@ -38,5 +38,5 @@ fi
 validate_weights "$WEIGHTS_OUTPUT" \
     --netcdf "$NETCDF_GRID" \
     --shapefile "$SHAPEFILE" \
-    --shapefile_layer=$SHAPEFILE_LAYER \
+    --shapefile-layer=$SHAPEFILE_LAYER \
     --max-cell-sum 1.01

@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from factories import make_regions, make_weights_df, mini_coordinates, mini_polygons
+from factories import make_regions, make_weights_df, mini_grid, mini_polygons
 from netcdf2region.validate_weights import ERROR, WARNING, Report, validate_weights
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -224,7 +224,7 @@ def test_rounding_slack_does_not_trip_the_default_ceiling():
 # --------------------------------------------------------------------------- #
 
 def test_coordinates_are_checked_against_the_template_grid():
-    report = validate_weights(make_weights_df(GOOD_ROWS), coordinates=mini_coordinates())
+    report = validate_weights(make_weights_df(GOOD_ROWS), grid=mini_grid())
 
     assert report.ok
     assert _check(report, "coords_on_grid").passed
@@ -234,7 +234,7 @@ def test_a_coordinate_off_the_grid_is_an_error():
     """This is what makes ``aggregate`` fail, so it must be caught here first."""
     df = make_weights_df(GOOD_ROWS + [(0.75, 0.5, "D", 0.5)])
 
-    report = validate_weights(df, coordinates=mini_coordinates())
+    report = validate_weights(df, grid=mini_grid())
 
     assert not report.ok
     check = _check(report, "coords_on_grid")
@@ -298,7 +298,7 @@ def test_regions_can_be_supplied_as_a_path(tmp_path):
 def test_area_reconstruction_passes_for_correct_weights(mini_weights_csv):
     """The pipeline's own output must reconstruct its regions' areas."""
     report = validate_weights(
-        mini_weights_csv, coordinates=mini_coordinates(), regions=_regions_gdf()
+        mini_weights_csv, grid=mini_grid(), regions=_regions_gdf()
     )
 
     assert report.ok
@@ -319,7 +319,7 @@ def test_badly_scaled_weights_are_flagged_as_an_area_warning():
     ]
     report = validate_weights(
         make_weights_df(rows),
-        coordinates=mini_coordinates(),
+        grid=mini_grid(),
         regions=_regions_gdf({"A": box(0, 0, 1, 1)}),
     )
 
