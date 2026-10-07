@@ -15,6 +15,7 @@ from .exact_weights import exact_weights
 from .load_grid import load_template_grid
 from .load_regions import load_regions
 from .sampled_weights import sampled_weights
+from .validate_weights import validate_weights
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,8 @@ def compute_weights(
     point_distribution="uniform",
     n_jobs=1,
     backend="threading",
+    validate=True,
+    max_cell_sum=1.01,
 ):
     """Compute the weights of every grid cell for every region.
 
@@ -55,6 +58,11 @@ def compute_weights(
         point_distribution: ``"uniform"`` or ``"random"``, only for ``"sampling"``.
         n_jobs: Parallel jobs.
         backend: joblib backend.
+        validate: Check the weights with :func:`~netcdf2region.validate_weights.validate_weights`
+            against the grid and regions they were computed from. The report is logged and
+            the CSV is still written, but a failed error-level check then raises
+            ``ValueError``. Warnings (e.g. cell sums above ``max_cell_sum``) only get logged.
+        max_cell_sum: Ceiling for the per-cell weight sum warning of the validation.
 
     Returns:
         pandas.DataFrame: ``lat, lon, region_id, percent_overlap`` (plus
@@ -89,6 +97,15 @@ def compute_weights(
     if output_csv is not None:
         df.to_csv(output_csv, index=False, float_format=float_format)
         logger.info(f"Done. {len(df)} rows for {df['region_id'].nunique()} regions saved to {output_csv}")
+
+    if validate:
+        # Runs after writing, so a long computation is not lost if a check fails.
+        logger.info("Validating the weights...")
+        report = validate_weights(df, grid=grid, regions=regions, max_cell_sum=max_cell_sum,
+                                  method=method)
+        report.source = output_csv or report.source
+        logger.info("\n" + report.summary())
+        report.raise_if_failed()
     return df
 
 
@@ -113,6 +130,11 @@ def main():
     add_option(parser, "--n-jobs", legacy="--n_jobs", type=int, default=8,
                help="Number of parallel jobs (default: 8)")
     add_option(parser, "--backend", default="threading", help="Parallel backend to use (default: threading)")
+    add_option(parser, "--no-validate", dest="validate", action="store_false",
+               help="Skip validating the computed weights (by default they are checked against "
+                    "the grid and regions, and the command fails if an error-level check fails)")
+    add_option(parser, "--max-cell-sum", type=float, default=1.01,
+               help="Validation warns when a cell's weights sum above this (default: 1.01)")
     args = parser.parse_args()
     setup_logging()
 
@@ -130,6 +152,8 @@ def main():
         point_distribution=args.point_distribution,
         n_jobs=args.n_jobs,
         backend=args.backend,
+        validate=args.validate,
+        max_cell_sum=args.max_cell_sum,
     )
 
 

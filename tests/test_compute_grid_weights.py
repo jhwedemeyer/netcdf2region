@@ -208,6 +208,45 @@ def test_unknown_method_is_rejected(mini_grid_nc, mini_regions_geojson):
         compute_weights(mini_grid_nc, mini_regions_geojson, method="guess")
 
 
+def _break_weights(monkeypatch):
+    """Make the exact method return a weight above 1, which validation must reject."""
+    import netcdf2region.compute_grid_weights as cgw
+    real = cgw.exact_weights
+
+    def broken(*args, **kwargs):
+        df = real(*args, **kwargs)
+        df.loc[0, "percent_overlap"] = 1.5
+        return df
+
+    monkeypatch.setattr(cgw, "exact_weights", broken)
+
+
+def test_validation_runs_by_default_and_logs_the_report(mini_grid_nc, mini_regions_geojson, caplog):
+    caplog.set_level("INFO", logger="netcdf2region.compute_grid_weights")
+    compute_weights(mini_grid_nc, mini_regions_geojson, n_jobs=1)
+
+    assert "Weights validation" in caplog.text
+    assert "[PASS] region_coverage" in caplog.text
+
+
+def test_failed_validation_raises_after_writing(tmp_path, monkeypatch, mini_grid_nc,
+                                                mini_regions_geojson):
+    _break_weights(monkeypatch)
+    out = tmp_path / "w.csv"
+
+    with pytest.raises(ValueError, match="weight_range"):
+        compute_weights(mini_grid_nc, mini_regions_geojson, str(out), n_jobs=1)
+    assert out.exists()
+
+
+def test_validation_can_be_skipped(monkeypatch, mini_grid_nc, mini_regions_geojson):
+    _break_weights(monkeypatch)
+
+    df = compute_weights(mini_grid_nc, mini_regions_geojson, n_jobs=1, validate=False)
+
+    assert df["percent_overlap"].max() == 1.5
+
+
 # --------------------------------------------------------------------------- #
 # Command line interface
 # --------------------------------------------------------------------------- #
@@ -230,6 +269,17 @@ def test_cli_writes_the_same_output_as_the_api(tmp_path, mini_grid_nc,
     assert result.returncode == 0, result.stderr
     with open(out) as produced, open(golden_weights_path) as golden:
         assert produced.read() == golden.read()
+
+
+def test_cli_validates_by_default_and_can_skip_it(tmp_path, mini_grid_nc, mini_regions_geojson):
+    default = _cli(mini_grid_nc, mini_regions_geojson, str(tmp_path / "a.csv"), "--n-jobs=1")
+    skipped = _cli(mini_grid_nc, mini_regions_geojson, str(tmp_path / "b.csv"), "--n-jobs=1",
+                   "--no-validate")
+
+    assert default.returncode == 0, default.stderr
+    assert "Weights validation" in default.stderr
+    assert skipped.returncode == 0, skipped.stderr
+    assert "Weights validation" not in skipped.stderr
 
 
 def test_cli_rejects_a_360_grid_without_the_shift_flag(tmp_path, mini_regions_geojson):

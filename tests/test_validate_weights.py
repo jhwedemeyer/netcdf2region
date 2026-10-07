@@ -350,6 +350,18 @@ def test_statistics_counts_rescued_rows():
     assert details["n_rows"] == 5
 
 
+def test_statistics_skip_rescued_rows_for_exact_weights():
+    """Exact weights are not rounded, so counting 'rescued' rows would be meaningless."""
+    df = make_weights_df(GOOD_ROWS + [(1.5, 6.5, "E", 1e-6)])
+
+    explicit = _check(validate_weights(df, method="exact"), "statistics")
+    inferred = _check(validate_weights(df.assign(cell_area_km2=1.0)), "statistics")
+
+    for check in (explicit, inferred):
+        assert "n_rescued_rows" not in check.details
+        assert "rescued" not in check.message
+
+
 def test_statistics_never_fails_a_run():
     report = validate_weights(make_weights_df(GOOD_ROWS))
 

@@ -22,20 +22,8 @@ WEIGHTS_OUTPUT="data/ISIMIP_to_GADM36_admin0_weights.csv"
 # Settings for parallel computation
 NUMBER_OF_JOBS=16 # Number of parallel jobs set to the number of CPU cores
 
-# Run the Python script
-compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --gid=GID_0 --shapefile-layer=$SHAPEFILE_LAYER --n-jobs=$NUMBER_OF_JOBS
-
-if [ $? -ne 0 ]; then
-    echo "compute_grid_weights failed; not validating." >&2
-    exit 1
-fi
-
-# Check the freshly computed weights before anything downstream consumes them.
-# Errors (regions missing entirely, coordinates off the grid, weights out of
-# range) exit non-zero and fail the job; cell sums above the ceiling are only
-# reported, since overlapping source polygons make them legitimate.
-validate_weights "$WEIGHTS_OUTPUT" \
-    --netcdf "$NETCDF_GRID" \
-    --shapefile "$SHAPEFILE" \
-    --shapefile-layer=$SHAPEFILE_LAYER \
-    --max-cell-sum 1.01
+# compute_grid_weights validates the weights it writes before exiting. Errors
+# (regions missing entirely, coordinates off the grid, weights out of range) exit
+# non-zero and fail the job; cell sums above --max-cell-sum are only reported,
+# since overlapping source polygons make them legitimate.
+compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --gid=GID_0 --shapefile-layer=$SHAPEFILE_LAYER --n-jobs=$NUMBER_OF_JOBS --max-cell-sum 1.01

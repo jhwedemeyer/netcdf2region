@@ -474,11 +474,13 @@ def _check_region_areas(df, regions, grid, area_rtol):
     )
 
 
-def _check_statistics(df):
-    """Check 10: descriptive statistics, always reported, never failing."""
+def _check_statistics(df, method):
+    """Check 10: descriptive statistics, always reported, never failing.
+
+    Rescued rows are only counted for sampled weights: exact weights keep 8 significant
+    digits throughout, so the 2-decimal test would count nearly every row.
+    """
     weights = df["percent_overlap"]
-    # Rescued rows are written at 6 decimals; sampled rows at 2.
-    rescued = int((weights.round(2) != weights).sum())
     n_cells = len(df.groupby(["lat", "lon"]))
     histogram, _ = np.histogram(weights, bins=[0, 0.01, 0.1, 0.25, 0.5, 0.75, 1.0001])
     details = {
@@ -488,16 +490,17 @@ def _check_statistics(df):
         "min_weight": float(weights.min()),
         "max_weight": float(weights.max()),
         "mean_weight": float(weights.mean()),
-        "n_rescued_rows": rescued,
         "histogram": [int(h) for h in histogram],
     }
-    return Check(
-        "statistics", True, INFO,
+    message = (
         f"{len(df)} rows, {details['n_regions']} regions, {n_cells} cells, "
-        f"weights {details['min_weight']:.6g}..{details['max_weight']:.6g}, "
-        f"{rescued} rescued row(s)",
-        details,
+        f"weights {details['min_weight']:.6g}..{details['max_weight']:.6g}"
     )
+    if method == "sampling":
+        # Rescued rows are written at 6 decimals; sampled rows at 2.
+        details["n_rescued_rows"] = int((weights.round(2) != weights).sum())
+        message += f", {details['n_rescued_rows']} rescued row(s)"
+    return Check("statistics", True, INFO, message, details)
 
 
 def validate_weights(
@@ -506,6 +509,7 @@ def validate_weights(
     regions=None,
     max_cell_sum=1.01,
     area_rtol=0.05,
+    method=None,
 ):
     """Run every applicable check against a weights table.
 
@@ -519,6 +523,9 @@ def validate_weights(
         max_cell_sum: Ceiling for the per-cell weight sum warning. Values above 1
             are legitimate when the source polygons overlap.
         area_rtol: Relative tolerance for the region area warning.
+        method: ``"exact"`` or ``"sampling"``, the method the weights were computed
+            with. ``None`` infers it from the ``cell_area_km2`` column, which only
+            exact weights have.
 
     Returns:
         Report: The outcome of every check, in severity-relevant order.
@@ -559,7 +566,9 @@ def validate_weights(
     report.checks.append(_check_coords_on_grid(df, grid))
     report.checks.append(_check_region_coverage(df, regions))
     report.checks.append(_check_region_areas(df, regions, grid, area_rtol))
-    report.checks.append(_check_statistics(df))
+    if method is None:
+        method = "exact" if "cell_area_km2" in df.columns else "sampling"
+    report.checks.append(_check_statistics(df, method))
 
     return report
 

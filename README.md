@@ -49,6 +49,8 @@ compute_grid_weights <netcdf> <shapefile> <output> [options]
 - `--coordinate-origin <str>`: Coordinate origin of the grid (default: centered).
 - `--gid <str>`: Geo identifier of the shapefile (default: GID_1)
 - `--shift-longitudes`: Shift longitudes from [0, 360] to [-180, 180]
+- `--no-validate`: Skip validating the computed weights. By default the weights are checked against the grid and the regions (the same checks as `validate_weights`), the report is printed, and the command exits with an error if an error-level check fails (the CSV is still written).
+- `--max-cell-sum <float>`: Validation warns when a cell's weights sum above this (default: 1.01). Raise it for shapefiles with overlapping polygons.
 
 See `--help` for more details.
 
