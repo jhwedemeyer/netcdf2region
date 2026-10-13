@@ -21,6 +21,10 @@ from netcdf2region.weights import (
 
 logger = logging.getLogger(__name__)
 
+# Upper bound on the bytes of data held in memory at once: aggregate() reads this many
+# bytes of time steps per block.
+MAX_BLOCK_BYTES = 1e9
+
 
 def aggregate(
     netcdf,
@@ -43,30 +47,30 @@ def aggregate(
     logger.info(f"Loading weights file: {weights}")
     weights_df = load_weights(weights, method, correct_weights_flag, area_weighted)
 
-    # Load NetCDF data. Choosing a NaN handling mode implies NaNs are expected in
-    # the variable (but not in the secondary weights, which these modes don't touch).
-    logger.info(f"Loading NetCDF file: {netcdf}")
-    var_data, lats, lons, time_var = load_data_grid(
-        netcdf,
-        var,
-        time_var=time_var_name,
-        require_time=True,
-        allow_nan=allow_nan or exclude_nan_cells or fill_nans is not None,
-        shift_longitudes=shift_longitudes,
-    )
+    # The data is read in blocks of time steps, so memory does not grow with the length
+    # of the record. 
+    
+    # Choosing a NaN handling mode implies NaNs are expected in the
+    # variable (but not in the secondary weights, which these modes don't touch).
+    nan_ok = allow_nan or exclude_nan_cells or fill_nans is not None
 
-    # Print NaN handling summary
-    if np.isnan(var_data).any():
-        steps = []
-        if exclude_nan_cells:
-            steps.append("cells that are NaN at every time step are excluded")
-        if fill_nans is not None:
-            remaining = "remaining " if exclude_nan_cells else ""
-            steps.append(f"{remaining}NaN values are replaced with {fill_nans}")
-        else:
-            steps.append("affected regions aggregate to NaN")
-        handling = "; then ".join(steps)
-        logger.warning(f"Variable '{var}' contains NaN values. {handling[0].upper()}{handling[1:]}.")
+    def read_block(start, stop):
+        return load_data_grid(
+            netcdf,
+            var,
+            time_var=time_var_name,
+            require_time=True,
+            allow_nan=nan_ok,
+            shift_longitudes=shift_longitudes,
+            time_slice=slice(start, stop),
+        )
+
+    # One time step gives the axes and the time stamps, and sizes the blocks.
+    logger.info(f"Loading NetCDF file: {netcdf}")
+    first, lats, lons, time_var = read_block(0, 1)
+    n_times = len(time_var)
+    step = max(1, int(MAX_BLOCK_BYTES // first.nbytes))
+    blocks = range(0, n_times, step)
 
     check_weights_on_grid(weights_df, lats, lons, netcdf)
 
@@ -90,78 +94,102 @@ def aggregate(
             secondary_weights_var=secondary_weights_var,
         )
 
-    # initialize list to store results for each region
-    results = []
+    # Cells that are NaN at every time step are structural (e.g. ocean cells). Knowing
+    # that takes all time steps, so it is one extra pass over the blocks.
+    cell_all_nan = None
+    if exclude_nan_cells:
+        cell_all_nan = np.ones(first.shape[1:], dtype=bool)
+        for start in blocks:
+            cell_all_nan &= np.isnan(read_block(start, start + step)[0]).all(axis=0)
 
-    # Loop over each unique region
-    for region_id in tqdm(weights_df['region_id'].unique(), desc="Aggregating regions"):
-
-        # Select weights for the current region
-        region_weights = weights_df[weights_df['region_id'] == region_id]
-
-        # Resolve to grid indices. check_weights_on_grid has already established that
-        # every coordinate in the file is on the grid, so these lookups cannot miss.
+    # Resolve every region to grid indices and weights once, so the time loop can be vectorized.
+    regions = []
+    for region_id, region_weights in weights_df.groupby('region_id', sort=False):
+        # check_weights_on_grid has already established that every coordinate in the
+        # file is on the grid, so these lookups cannot miss.
         lat_indices = np.array([np.where(lats == lat)[0][0] for lat in region_weights['lat']])
         lon_indices = np.array([np.where(lons == lon)[0][0] for lon in region_weights['lon']])
 
+        # Compute the weights for the region's grid cells, including any secondary weights.
         weights_arr = region_cell_weights(
             region_weights, lat_indices, lon_indices, area_weighted, secondary_weights_data
         )
 
-        # Extract the relevant grid cells for all time steps at once
-        # Shape: (num_cells, num_times)
-        region_values = var_data[:, lat_indices, lon_indices].T  # shape: (num_cells, num_times)
-
-        # Cells that are NaN at every time step are structural (e.g. ocean cells):
-        # drop them by zeroing their weight. Their values must be zeroed too, since
-        # NaN * 0 is still NaN. This runs before filling, so the fill only reaches
-        # the cells that are kept.
+        # Structural cells are dropped by zeroing their weight (and, per block, their
+        # values, since NaN * 0 is still NaN).
+        cells_all_nan = None
         if exclude_nan_cells:
-            cells_all_nan = np.isnan(region_values).all(axis=1)
-            region_values[cells_all_nan, :] = 0
+            cells_all_nan = cell_all_nan[lat_indices, lon_indices]
             weights_arr[cells_all_nan] = 0
 
-        # Replace any remaining NaNs with the fill value, keeping the cell's weight.
-        # Note this pulls mean/std towards the fill value.
-        if fill_nans is not None:
-            region_values = np.nan_to_num(region_values, nan=fill_nans)
+        regions.append((region_id, lat_indices, lon_indices, weights_arr, cells_all_nan))
 
-        # Vectorized aggregation over all time steps
-        # region_values and effective_weights: shape (num_cells, num_times)
-        if exclude_nan_cells and cells_all_nan.all():
-            # No data left in the region: NaN for every method, so sum doesn't report 0
-            agg = np.full(region_values.shape[1], np.nan)
-        elif method == "mean":
-            try:
-                agg = np.average(region_values, axis=0, weights=weights_arr)
-            except ZeroDivisionError:
-                logger.warning(f"All weights are zero for region_id {region_id}. Setting mean to NaN.")
+    # One row per region, one column per time step
+    results = np.empty((len(regions), n_times))
+    nan_reported = False
+
+    for start in tqdm(blocks, desc="Aggregating time blocks"):
+        var_data = read_block(start, start + step)[0]  # shape: (num_times, lat, lon)
+
+        if not nan_reported and np.isnan(var_data).any():
+            nan_reported = True
+            steps = []
+            if exclude_nan_cells:
+                steps.append("cells that are NaN at every time step are excluded")
+            if fill_nans is not None:
+                remaining = "remaining " if exclude_nan_cells else ""
+                steps.append(f"{remaining}NaN values are replaced with {fill_nans}")
+            else:
+                steps.append("affected regions aggregate to NaN")
+            handling = "; then ".join(steps)
+            logger.warning(f"Variable '{var}' contains NaN values. {handling[0].upper()}{handling[1:]}.")
+
+        for i, (region_id, lat_indices, lon_indices, weights_arr, cells_all_nan) in enumerate(regions):
+            # Extract the relevant grid cells for all time steps of the block at once
+            region_values = var_data[:, lat_indices, lon_indices].T  # shape: (num_cells, num_times)
+
+            if cells_all_nan is not None:
+                region_values[cells_all_nan, :] = 0
+
+            # Replace any remaining NaNs with the fill value, keeping the cell's weight.
+            # Note this pulls mean/std towards the fill value.
+            if fill_nans is not None:
+                region_values = np.nan_to_num(region_values, nan=fill_nans)
+
+            # Vectorized aggregation over all time steps of the block
+            # region_values and weights_arr: shape (num_cells, num_times) and (num_cells,)
+            if cells_all_nan is not None and cells_all_nan.all():
+                # No data left in the region: NaN for every method, so sum doesn't report 0
                 agg = np.full(region_values.shape[1], np.nan)
-        elif method == "sum":
-            agg = np.sum(region_values * weights_arr[:, None], axis=0)
-        elif method == "std":
-            try:
-                mean = np.average(region_values, axis=0, weights=weights_arr)
-                variance = np.average((region_values - mean) ** 2, axis=0, weights=weights_arr)
-                agg = np.sqrt(variance)
-            except ZeroDivisionError:
-                logger.warning(f"All weights are zero for region_id {region_id}. Setting standard deviation to NaN.")
-                agg = np.full(region_values.shape[1], np.nan)
-        else:
-            raise ValueError("Unknown aggregation method")
+            elif method == "mean":
+                try:
+                    agg = np.average(region_values, axis=0, weights=weights_arr)
+                except ZeroDivisionError:
+                    logger.warning(f"All weights are zero for region_id {region_id}. Setting mean to NaN.")
+                    agg = np.full(region_values.shape[1], np.nan)
+            elif method == "sum":
+                agg = np.sum(region_values * weights_arr[:, None], axis=0)
+            elif method == "std":
+                try:
+                    mean = np.average(region_values, axis=0, weights=weights_arr)
+                    variance = np.average((region_values - mean) ** 2, axis=0, weights=weights_arr)
+                    agg = np.sqrt(variance)
+                except ZeroDivisionError:
+                    logger.warning(f"All weights are zero for region_id {region_id}. Setting standard deviation to NaN.")
+                    agg = np.full(region_values.shape[1], np.nan)
+            else:
+                raise ValueError("Unknown aggregation method")
 
-        # Store the result for all time steps for this region (vectorized, no loop)
-        region_results = pd.DataFrame({
-            "region_id": region_id,
-            "time": pd.to_datetime(time_var),
-            var: agg
-        })
-        results.append(region_results)
+            results[i, start:start + step] = agg
 
-    # Convert results to DataFrame and write to CSV
-    logger.info(f"Merging results and writing to output CSV {output}")
-    out_df = pd.concat(results)
-    out_df.to_csv(output, index=False)
+    # Write the table region by region
+    logger.info(f"Writing output CSV {output}")
+    times = pd.to_datetime(time_var)
+    with open(output, "w", newline="") as f:
+        for i, (region_id, *_) in enumerate(regions):
+            pd.DataFrame({"region_id": region_id, "time": times, var: results[i]}).to_csv(
+                f, index=False, header=(i == 0)
+            )
 
 
 def main():

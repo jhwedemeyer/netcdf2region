@@ -179,8 +179,13 @@ def load_data_grid(
         require_time=True,
         allow_nan=False,
         shift_longitudes=False,
+        time_slice=None,
     ):
-    """ Load NetCDF file and extract variable, lat, lon, and optional time. """
+    """ Load NetCDF file and extract variable, lat, lon, and optional time.
+
+    ``time_slice`` (a ``slice`` over time steps) limits what is read into memory; the
+    returned time values always cover the whole file.
+    """
     with _open_dataset(netcdf_path) as ds:
         if var not in ds:
             raise KeyError(f"Variable '{var}' not found in NetCDF file. Available variables: {list(ds.variables)}")
@@ -232,6 +237,9 @@ def load_data_grid(
 
         if lon_order is not None:
             data_var = data_var.isel({lon_name: lon_order})
+
+        if time_slice is not None and time_name is not None:
+            data_var = data_var.isel({time_name: time_slice})  # lazy: only this slice is read
 
         # Read the data before the dataset is closed.
         values = data_var.values

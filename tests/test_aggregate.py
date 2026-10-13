@@ -53,6 +53,40 @@ def test_aggregate_accepts_a_360_grid_when_shifting(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# aggregate - reading the data in blocks of time steps
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("method", ["mean", "sum", "std"])
+@pytest.mark.parametrize("nan_options", [
+    {},
+    {"exclude_nan_cells": True},
+    {"fill_nans": 0.0},
+    {"exclude_nan_cells": True, "fill_nans": -1.0},
+])
+def test_blocks_of_time_steps_do_not_change_the_result(tmp_path, monkeypatch, method, nan_options):
+    """One time step per block must give exactly the single-block table, including the
+    NaN modes, whose "NaN at every time step" test needs all blocks."""
+    import importlib
+    aggregate_module = importlib.import_module("netcdf2region.aggregate")
+
+    values = np.random.default_rng(0).normal(size=(7, len(MINI_LATS), len(MINI_LONS))).astype("float32")
+    values[:, 0, 0] = np.nan      # NaN at every time step
+    values[3, 1, 1] = np.nan      # NaN at one time step only
+    path = make_grid_nc(tmp_path / "g.nc", values=values, n_time=7)
+    weights = _weights_file(tmp_path, [
+        (MINI_LATS[0], MINI_LONS[0], "A", 1.0), (MINI_LATS[0], MINI_LONS[1], "A", 0.5),
+        (MINI_LATS[1], MINI_LONS[1], "B", 1.0), (MINI_LATS[1], MINI_LONS[2], "B", 0.25),
+    ])
+    kwargs = {"allow_nan": True, **nan_options}
+
+    one_block = _aggregate(tmp_path, path, weights, method=method, **kwargs)
+    monkeypatch.setattr(aggregate_module, "MAX_BLOCK_BYTES", 1)  # one time step per block
+    many_blocks = _aggregate(tmp_path, path, weights, method=method, **kwargs)
+
+    pd.testing.assert_frame_equal(many_blocks, one_block)
+
+
+# --------------------------------------------------------------------------- #
 # aggregate - core methods
 # --------------------------------------------------------------------------- #
 
