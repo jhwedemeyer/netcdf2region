@@ -1,9 +1,12 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/_static/logo-horizontal-dark.svg">
-  <img src="docs/_static/logo-horizontal-light.svg" alt="netcdf2region" width="520">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/_static/netcdf2region_logo2_dark.svg">
+  <img src="docs/_static/netcdf2region_logo2_light.svg" alt="netcdf2region" width="520">
 </picture>
 
 [![Tests](https://github.com/jhwedemeyer/netcdf2region/actions/workflows/tests.yml/badge.svg)](https://github.com/jhwedemeyer/netcdf2region/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/netcdf2region.svg)](https://pypi.org/project/netcdf2region/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/netcdf2region.svg)](https://pypi.org/project/netcdf2region/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22062732.svg)](https://doi.org/10.5281/zenodo.22062732)
 
 `netcdf2region` is a Python package providing command-line tools for aggregating gridded NetCDF files over regions defined by shapefiles. It is designed to facilitate spatial analysis and extraction of regional statistics from large climate or geospatial datasets.
 
@@ -233,6 +236,8 @@ compute_grid_weights $NETCDF_GRID $SHAPEFILE $WEIGHTS_OUTPUT --shapefile-layer=$
 This package builds on prior work of Leonie Wenz and Maximilian Kotz, whose approach to aggregating gridded climate data onto administrative regions forms the methodological basis for `netcdf2region`.
 
 Thanks to Anna Reckwitz, Katharina Ziegler, and Maik Hoffmann for early testing and for their help in improving the package.
+
+Special thanks go to Olalla Castro for designing the logo.
 
 ## Contributing
 

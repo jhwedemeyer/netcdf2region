@@ -8,11 +8,12 @@ authors:
     given-names: "Jakob"
     affiliation: "Potsdam Institute for Climate Impact Research (PIK)"
     orcid: "https://orcid.org/0000-0002-0657-4350"
-repository-code: "https://github.com/lochner/netcdf2region"
-url: "https://github.com/lochner/netcdf2region"
+repository-code: "https://github.com/jhwedemeyer/netcdf2region"
+url: "https://github.com/jhwedemeyer/netcdf2region"
 license: BSD-3-Clause
 version: "0.1.9"
 date-released: "2026-08-21"
+doi: "10.5281/zenodo.22062732"
 keywords:
   - netCDF
   - climate data
