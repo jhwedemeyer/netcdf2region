@@ -6,7 +6,7 @@
 [![Tests](https://github.com/jhwedemeyer/netcdf2region/actions/workflows/tests.yml/badge.svg)](https://github.com/jhwedemeyer/netcdf2region/actions/workflows/tests.yml)
 [![PyPI](https://img.shields.io/pypi/v/netcdf2region.svg)](https://pypi.org/project/netcdf2region/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/netcdf2region.svg)](https://pypi.org/project/netcdf2region/)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22062732.svg)](https://doi.org/10.5281/zenodo.22062732)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22062731.svg)](https://doi.org/10.5281/zenodo.22062731)
 
 `netcdf2region` is a Python package providing command-line tools for aggregating gridded NetCDF files over regions defined by shapefiles. It is designed to facilitate spatial analysis and extraction of regional statistics from large climate or geospatial datasets.
 
