@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/_static/netcdf2region_logo2_dark.svg">
-  <img src="docs/_static/netcdf2region_logo2_light.svg" alt="netcdf2region" width="520">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jhwedemeyer/netcdf2region/main/docs/_static/netcdf2region_logo2_dark.svg">
+  <img src="https://raw.githubusercontent.com/jhwedemeyer/netcdf2region/main/docs/_static/netcdf2region_logo2_light.svg" alt="netcdf2region" width="520">
 </picture>
 
 [![Tests](https://github.com/jhwedemeyer/netcdf2region/actions/workflows/tests.yml/badge.svg)](https://github.com/jhwedemeyer/netcdf2region/actions/workflows/tests.yml)
