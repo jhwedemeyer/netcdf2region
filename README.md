@@ -239,6 +239,8 @@ Thanks to Anna Reckwitz, Katharina Ziegler, and Maik Hoffmann for early testing 
 
 Special thanks go to Olalla Castro for designing the logo.
 
-## Contributing
+## Contributing and support
 
-Contributions are welcome! Please open issues or pull requests.
+Contributions are welcome! For questions and bug reports, please [open an issue](https://github.com/jhwedemeyer/netcdf2region/issues). See [CONTRIBUTING.md](https://github.com/jhwedemeyer/netcdf2region/blob/main/CONTRIBUTING.md) for how to set up a development environment, run the tests and submit pull requests, and for how the project is maintained.
+
+Release notes are in [CHANGELOG.md](https://github.com/jhwedemeyer/netcdf2region/blob/main/CHANGELOG.md).
